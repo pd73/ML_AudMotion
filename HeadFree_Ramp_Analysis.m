@@ -28,7 +28,7 @@ function HeadFree_Ramp_Analysis()
 %   Goal is export analysed data
 %   Removed headphone option
 % Update 11/11/2014 Calibrate head motion from first several blocks
-
+% 11-19-2014 this line added to test git
 
 
 
@@ -532,28 +532,40 @@ positions.speakerAZ=allData.data.(trialname).speaker;
 positions.headYAW=allData.data.(trialname).Head_Yaw*scaleAZ+offsetAZ;
 positions.gaze = positions.eyesAZ + positions.headYAW;
 
-
-[velocities, ~]= calcva(positions,1);
+[velocities, ~]= calcva(positions,20);
 
 try % calculate the trail start positions and velocity
     m.start_position = round(mean(positions.speakerAZ(200:300)));
     m.end_position = round(mean(positions.speakerAZ(end-300:end)));
     
-    start_time = find(abs(velocities.vspeakerAZ(200:end))>5,1)+200;
-        
-    end_time = find(abs(positions.speakerAZ-m.end_position)<2,1);
+    ramptrail =  (positions.speakerAZ'-m.start_position)*sign(m.end_position-m.start_position); 
+    assignin('base', 'ramptrail', ramptrail)
+    x1 = find(ramptrail > 0.05*max(ramptrail),1);
+    x2 = find(ramptrail > 0.95*max(ramptrail),1);
+    X = ramptrail(x1:x2);
+    Y = x1:x2;
+    start_time =floor(roots(polyfit(X,Y,1))+x1);
+    end_time = length(positions.speakerAZ);
     
+% Find the start of the head movement by interpolating back from the
+% midpoint of the start of the movement
+    headvels = abs(velocities.headYAW(start_time-500:end_time));
+    x1 = find(headvels > 0.25*max(headvels),1);
+    x2 = find(headvels > 0.75*max(headvels),1);
+    X = headvels(x1:x2);
+    Y = x1:x2;
+    start_head =floor(roots(polyfit(X,Y,1))+x1);
+ 
     rampVels = abs(velocities.vspeakerAZ(start_time:end_time));
-    
     m.ramp_speed = round(mean(rampVels(rampVels>0.8*max(rampVels)))/5)*5;
-    % disp(m.ramp_speed)
     
     if start_time < 501
         startplot = 1;
     else
-        startplot=start_time-500; % starts the plor 20 samples prior to the arm movement
+        startplot=start_time-500; % starts the plot 500ms prior to the arm movement
     end
-    m.TargetStart = start_time-startplot;
+    m.TargetStart = start_time-startplot; % ie always at 500ms
+    m.HeadStart = start_head; % 500 is the buffer for plotting before the start of the motion
     if end_time+1500 > length(positions.speakerAZ)
         endplot=length(positions.speakerAZ);
     else
@@ -574,7 +586,7 @@ try % calculate the trail start positions and velocity
     positions.headYAW=allData.data.(trialname).Head_Yaw(startplot:endplot)*scaleAZ+offsetAZ;
     positions.gaze = positions.eyesAZ + positions.headYAW;
     
-    [velocities, accelerations]= calcva(positions,1);
+    [velocities, accelerations]= calcva(positions,20);
     
     eyesAZvelon = 40; % saccades if faster then 50
     eyesAZaccon = 1500;
@@ -582,13 +594,13 @@ try % calculate the trail start positions and velocity
     PURvelon = -1; % Adam had 20 here - smooth pursuit goes down to slower here
     PURaccon = 40;
     
-    Gshifts_ind= union(find(abs(velocities.veyesAZ) > eyesAZvelon),...
-        find(abs(accelerations.aeyesAZ) > eyesAZaccon)); %indicies of saccades
+    Gshifts_ind= union(find(abs(velocities.gazeAZ) > eyesAZvelon),...
+        find(abs(accelerations.gazeAZ) > eyesAZaccon)); %indicies of saccades
 
   %   Gshifts_ind = [495:505,Gshifts_ind];
 
-    pursuitMovements_ind = union(find(abs(velocities.veyesAZ) > PURvelon),...
-        find(abs(accelerations.aeyesAZ) > PURaccon)); % indicies of pursuit
+    pursuitMovements_ind = union(find(abs(velocities.gazeAZ) > PURvelon),...
+        find(abs(accelerations.gazeAZ) > PURaccon)); % indicies of pursuit
     
     pursuitMovements_ind = setxor(pursuitMovements_ind,Gshifts_ind); %cleans up
     
@@ -778,6 +790,7 @@ plot(positions.headYAW,'y')
 
 try
     plot([meas.TargetStart,meas.TargetStart],[-10,10], 'LineStyle', ':','LineWidth', 1, 'Color', 'm');
+    plot([meas.HeadStart,meas.HeadStart],[-10,10], 'LineStyle', ':','LineWidth', 1, 'Color', 'y');
 catch
     disp('Tried and failed - meas.TargetStart')
 end
@@ -969,17 +982,20 @@ vels(1:n)=ones(n,1)*vels(n+1);
 vels=vels';
 end
 
-function [velocities, accelerations]= calcva(positions,~)
-n=20;
-velocities.veyesAZ=ParabolicDiff(positions.eyesAZ,n);
-velocities.gazeAZ=ParabolicDiff(positions.gaze,n);
-
-if nargin> 1
-    velocities.vspeakerAZ=ParabolicDiff(positions.speakerAZ,n);
+function [velocities, accelerations]= calcva(positions,n)
+disp(nargin)
+if nargin == 1
+    n = 20;
 end
+
+velocities.veyesAZ=ParabolicDiff(positions.eyesAZ,n);
+velocities.vspeakerAZ=ParabolicDiff(positions.speakerAZ,n);
+velocities.gazeAZ=ParabolicDiff(positions.gaze,n);
+velocities.headYAW=ParabolicDiff(positions.headYAW,2*n);
 
 accelerations.aeyesAZ=ParabolicDiff(velocities.veyesAZ,n);
 accelerations.gazeAZ=ParabolicDiff(velocities.gazeAZ,n);
+accelerations.headYAW=ParabolicDiff(velocities.headYAW,2*n);
 end
 
 function y=read_raw(pathname, filename)
