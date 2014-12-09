@@ -29,9 +29,13 @@ function HeadFree_Ramp_Analysis()
 %   Removed headphone option
 % Update 11/11/2014 Calibrate head motion from first several blocks
 % 11-19-2014 this line added to test git
+% Update 12/2/2014 added calculation of head start move
+% Update 12/3/2014 add in gaze start and export the times
 
+%%\\smdnas\paige-lab\Paige Lab\Labs\A-Lab\RunTables\Gaze Speaker Movment
 
-
+% Update 12/9/14 Rewrote the saccade detection section and improved
+% stability of the ploting
 
 mydata.MainFigure = figure('name', 'Data Viewer', 'numbertitle', 'off', 'menubar', 'none');
 
@@ -58,7 +62,7 @@ plotThis=get(cbo,'Value');
 allData=get(mydata.MainFigure,'userdata');
 allData.currentPlot=plotThis;
 set(mydata.MainFigure,'userdata',allData);
-PlotTrial([],[],mydata,plotThis)
+PlotTrial([],[],mydata,plotThis);
 end
 
 function Rescale(cbo,~,mydata)
@@ -81,8 +85,8 @@ prevtrialname=f{plotThis-1}{1};
 allData.data.(trialname).scaleF = allData.data.(prevtrialname).scaleF;
 allData.data.(trialname).offsetF = allData.data.(prevtrialname).offsetF ;
 set(mydata.MainFigure,'userdata',allData);
-set(mydata.offsetFactdisp,'string',num2str(allData.data.(trialname).offsetF))
-set(mydata.scaleFactdisp,'string',num2str(allData.data.(trialname).scaleF))
+set(mydata.offsetFactdisp,'string',num2str(allData.data.(trialname).offsetF));
+set(mydata.scaleFactdisp,'string',num2str(allData.data.(trialname).scaleF));
 end
 
 function ClickRescale(~,~,mydata) % redo this as a rescale function
@@ -523,7 +527,7 @@ end
 function [m]= MeasureTrial(mydata,trialname, scaleF, offsetF)
 allData=get(mydata.MainFigure,'userdata');
 
-scaleAZ = allData.data.scaleAZ; 
+scaleAZ = allData.data.scaleAZ;
 offsetAZ = allData.data.offsetAZ;
 %horizontal
 positions.eyesAZ=(allData.data.(trialname).eyesAZ_R+allData.data.(trialname).eyesAZ_L)/2*scaleF+offsetF;
@@ -534,12 +538,12 @@ positions.gaze = positions.eyesAZ + positions.headYAW;
 
 [velocities, ~]= calcva(positions,20);
 
-try % calculate the trail start positions and velocity
+try % calculate the trail start and end positions
     m.start_position = round(mean(positions.speakerAZ(200:300)));
     m.end_position = round(mean(positions.speakerAZ(end-300:end)));
     
-    ramptrail =  (positions.speakerAZ'-m.start_position)*sign(m.end_position-m.start_position); 
-    assignin('base', 'ramptrail', ramptrail)
+    % Determine when the
+    ramptrail =  (positions.speakerAZ'-m.start_position)*sign(m.end_position-m.start_position);
     x1 = find(ramptrail > 0.05*max(ramptrail),1);
     x2 = find(ramptrail > 0.95*max(ramptrail),1);
     X = ramptrail(x1:x2);
@@ -547,15 +551,26 @@ try % calculate the trail start positions and velocity
     start_time =floor(roots(polyfit(X,Y,1))+x1);
     end_time = length(positions.speakerAZ);
     
-% Find the start of the head movement by interpolating back from the
-% midpoint of the start of the movement
+    % Find the start of the head movement by interpolating back from the
+    % midpoint of the start of the movement
     headvels = abs(velocities.headYAW(start_time-500:end_time));
+    
     x1 = find(headvels > 0.25*max(headvels),1);
     x2 = find(headvels > 0.75*max(headvels),1);
     X = headvels(x1:x2);
     Y = x1:x2;
     start_head =floor(roots(polyfit(X,Y,1))+x1);
- 
+    
+    % Find the start of the head movement by interpolating back from the
+    % midpoint of the start of the movement
+    gazevels = abs(velocities.gazeAZ(start_time-500:end_time));
+    assignin('base', 'gazevels', gazevels)
+    x1 = find(headvels > 0.25*max(headvels),1);
+    x2 = find(headvels > 0.75*max(headvels),1);
+    X = headvels(x1:x2);
+    Y = x1:x2;
+    start_gaze =floor(roots(polyfit(X,Y,1))+x1);
+    
     rampVels = abs(velocities.vspeakerAZ(start_time:end_time));
     m.ramp_speed = round(mean(rampVels(rampVels>0.8*max(rampVels)))/5)*5;
     
@@ -564,8 +579,7 @@ try % calculate the trail start positions and velocity
     else
         startplot=start_time-500; % starts the plot 500ms prior to the arm movement
     end
-    m.TargetStart = start_time-startplot; % ie always at 500ms
-    m.HeadStart = start_head; % 500 is the buffer for plotting before the start of the motion
+
     if end_time+1500 > length(positions.speakerAZ)
         endplot=length(positions.speakerAZ);
     else
@@ -573,141 +587,130 @@ try % calculate the trail start positions and velocity
     end
     
     if startplot>endplot
-        disp('bad movement')
+        disp('Start of plot after end of plot')
         startplot = 1;
         endplot = length(positions.speakerAZ);
     end
-       
     
     %horizontal
+
     positions.eyesAZ=positions.eyesAZ(startplot:endplot); %eye posiitons
     positions.eyesEL=positions.eyesEL(startplot:endplot);
     positions.speakerAZ=positions.speakerAZ(startplot:endplot); %speaker positions
     positions.headYAW=allData.data.(trialname).Head_Yaw(startplot:endplot)*scaleAZ+offsetAZ;
     positions.gaze = positions.eyesAZ + positions.headYAW;
+    numSamples = length(positions.eyesAZ);
     
     [velocities, accelerations]= calcva(positions,20);
     
     eyesAZvelon = 40; % saccades if faster then 50
     eyesAZaccon = 1500;
     
-    PURvelon = -1; % Adam had 20 here - smooth pursuit goes down to slower here
-    PURaccon = 40;
+    %     PURvelon = -1; % Adam had 20 here - smooth pursuit goes down to slower here
+    %     PURaccon = 40;
     
     Gshifts_ind= union(find(abs(velocities.gazeAZ) > eyesAZvelon),...
         find(abs(accelerations.gazeAZ) > eyesAZaccon)); %indicies of saccades
-
-  %   Gshifts_ind = [495:505,Gshifts_ind];
-
-    pursuitMovements_ind = union(find(abs(velocities.gazeAZ) > PURvelon),...
-        find(abs(accelerations.gazeAZ) > PURaccon)); % indicies of pursuit
     
-    pursuitMovements_ind = setxor(pursuitMovements_ind,Gshifts_ind); %cleans up
+    % adds a 'saccade' where the start of the speaker movement occurs
+    Gshifts_ind = sort([475:525,Gshifts_ind]);
+    
+    % anything not saccade is pursuit
+    pursuitMovements_ind = setxor(1:length(positions.eyesAZ),Gshifts_ind);
     
     %eliminate movements before 100ms
     pursuitMovements_ind=pursuitMovements_ind(pursuitMovements_ind>100);
-    Gshifts=find(diff(Gshifts_ind)>20);
     
-    pursuitMovements= find(diff(pursuitMovements_ind)>20);
+    Gshifts=find(diff(Gshifts_ind)>20);
+    assignin('base', 'Gshifts', Gshifts)
+    assignin('base', 'Gshifts_ind', Gshifts_ind)
+    
+    %  pursuitMovements= find(diff(pursuitMovements_ind)>5);
     
     numGshifts=length(Gshifts)+1;
     
-    numPursuitMovements = length(pursuitMovements)+1;
-    m.positions=positions;
+    numPursuitMovements = numGshifts+1 ; %length(pursuitMovements)+1;
     
     if ~isempty(Gshifts_ind)
         Gshifts_start=zeros(1,numGshifts);
         Gshifts_end=zeros(1,numGshifts);
+        pursuitMovements_start=zeros(1,numGshifts+1);
+        pursuitMovements_end=zeros(1,numGshifts+1);
+        
         Gshifts_start(1)=Gshifts_ind(1);
+        pursuitMovements_start(1) = 100;
+        pursuitMovements_end(1) = Gshifts_start(1)-1;
+        
         if numGshifts == 1
             Gshifts_end(1)= Gshifts_ind(end);
-        else
-            Gshifts_end(1)= Gshifts_ind(Gshifts(1));
+            pursuitMovements_start(2) = Gshifts_end(1)+1;
+            pursuitMovements_end(2) = numSamples;
         end
         if numGshifts > 1
+            Gshifts_end(1)= Gshifts_ind(Gshifts(1));
+            pursuitMovements_start(2) = Gshifts_ind(Gshifts(1))+1;
+            pursuitMovements_end(2) = Gshifts_ind(Gshifts(1)+1)-1;
+            % this is because there Gshifts(1) is the end of the first
+            % saccade and Gshifts(2) is the beginning of the second saccade
+            
+            %the last shift
             Gshifts_start(numGshifts)=Gshifts_ind(Gshifts(numGshifts-1)+1);
             Gshifts_end(numGshifts)=Gshifts_ind(end);
+            pursuitMovements_start(numPursuitMovements) = Gshifts_ind(end)+1;
+            pursuitMovements_end(numPursuitMovements) = numSamples;
+            
             if numGshifts > 2
                 for i = 2:numGshifts-1
                     Gshifts_start(i)=Gshifts_ind(Gshifts(i-1)+1);
                     Gshifts_end(i)=Gshifts_ind(Gshifts(i));
-                    
+                    pursuitMovements_start(i+1) = Gshifts_ind(Gshifts(i))+1;
+                    pursuitMovements_end(i+1) = Gshifts_ind(Gshifts(i)+1)-1;
                 end
             end
-            if Gshifts_start(1) < 75
-                Gshifts_start=Gshifts_start(2:end);
-                Gshifts_end=Gshifts_end(2:end);
-                numGshifts=numGshifts-1;
-            end
-        end
-        
-        m.numGshifts = numGshifts;
-        m.Gshifts_start=Gshifts_start;
-        m.Gshifts_end=Gshifts_end;
-        m.Gdurations= Gshifts_end-Gshifts_start;
-        m.Gamplitudes= positions.eyesAZ(Gshifts_end)-positions.eyesAZ(Gshifts_start);
-        
-        for i = 1:numGshifts
-            if m.Gamplitudes(i) > 0
-                m.GSpeakVelocity(i)=max(velocities.veyesAZ(Gshifts_start:Gshifts_end));
-            else
-                m.GSpeakVelocity(i)=min(velocities.veyesAZ(Gshifts_start:Gshifts_end));
-            end
+            
         end
         
     else
         m.numGshifts = 0;
+        pursuitMovements_start(1) = 100;
+        pursuitMovements_end(1) = numSamples;
+    end
+
+    for i =1:numPursuitMovements
+        %m.pursuitMeanVelocities(i)=mean(velocities.veyesAZ(pursuitMovements_start(i):pursuitMovements_end(i)));
+        m.pursuitMeanVelocities(i)=mean(velocities.gazeAZ(pursuitMovements_start(i):pursuitMovements_end(i)));
+        x = pursuitMovements_start(i):pursuitMovements_end(i);
+        y = positions.gaze(pursuitMovements_start(i):pursuitMovements_end(i))';
+        p = polyfit(x,y,1);
+        m.pursuitSlope(i) = p(1)*1000;
+        %             m.pursuitHMeanVelocities(i)=round(mean(velocities.vhh(pursuitMovements_start(i):pursuitMovements_end(i))));
+        %             m.pursuitEMeanVelocities(i)=round(mean(velocities.veh(pursuitMovements_start(i):pursuitMovements_end(i))));
     end
     
-    if ~isempty(pursuitMovements)
-        m.pursuitMovements_ind=pursuitMovements_ind;
-        pursuitMovements_start=zeros(1,numPursuitMovements);
-        pursuitMovements_end=zeros(1,numPursuitMovements);
-        pursuitMovements_start(1)=pursuitMovements_ind(1);
-        if ~isempty(pursuitMovements)
-            pursuitMovements_end(1)= pursuitMovements_ind(pursuitMovements(1));
-        else
-            pursuitMovements_end(1)=pursuitMovements_ind(end);
-        end
-        if numPursuitMovements > 1
-            pursuitMovements_start(numPursuitMovements)=pursuitMovements_ind(pursuitMovements(numPursuitMovements-1)+1);
-            pursuitMovements_end(numPursuitMovements)=pursuitMovements_ind(end);
-            if numPursuitMovements > 2
-                for i = 2:numPursuitMovements-1
-                    pursuitMovements_start(i)=pursuitMovements_ind(pursuitMovements(i-1)+1);
-                    pursuitMovements_end(i)=pursuitMovements_ind(pursuitMovements(i));
-                end
-            end
-        end
-        m.numPursuitMovements=numPursuitMovements;
-        m.pursuitMovements_start=pursuitMovements_start;
-        m.pursuitMovements_end=pursuitMovements_end;
-        for i =1:numPursuitMovements
-            %m.pursuitMeanVelocities(i)=mean(velocities.veyesAZ(pursuitMovements_start(i):pursuitMovements_end(i)));
-            m.pursuitMeanVelocities(i)=mean(velocities.gazeAZ(pursuitMovements_start(i):pursuitMovements_end(i)));
-            x = pursuitMovements_start(i):pursuitMovements_end(i);
-            y = positions.eyesAZ(pursuitMovements_start(i):pursuitMovements_end(i))';
-            p = polyfit(x,y,1);
-            m.pursuitSlope(i) = p(1)*1000;
-            %             m.pursuitHMeanVelocities(i)=round(mean(velocities.vhh(pursuitMovements_start(i):pursuitMovements_end(i))));
-            %             m.pursuitEMeanVelocities(i)=round(mean(velocities.veh(pursuitMovements_start(i):pursuitMovements_end(i))));
-        end
-        m.pursuitDurations=pursuitMovements_end-pursuitMovements_start;
-       % m.pursuitAmplitudes= round(positions.eyesAZ(pursuitMovements_end)-positions.eyesAZ(pursuitMovements_start));
-        m.pursuitAmplitudes= round(positions.gazeAZ(pursuitMovements_end)-positions.eyesAZ(pursuitMovements_start));
-        
-        for i = 1:length(m.pursuitDurations)
-            if m.pursuitDurations(1) > 50
-                m.PursuitStart = pursuitMovements_start(1)-20;
-                break;
-            end
-        end
-        
-        
-    end
+    m.positions=positions;
     
+    m.TargetStart = start_time-startplot; % ie always at 500ms
+    m.HeadStart = start_head; % 500 is the buffer for plotting before the start of the motion
+    m.GazeStart = start_gaze;
+ 
+    % the saccades - measure eyes
+    m.numGshifts = numGshifts;
+    m.Gshifts_start=Gshifts_start;
+    m.Gshifts_end=Gshifts_end;
+    m.Gdurations= Gshifts_end-Gshifts_start;
+    m.Gamplitudes= positions.eyesAZ(Gshifts_end)-positions.eyesAZ(Gshifts_start);
+ 
+    % Pursuit - measure gaze
+    m.pursuitMovements_ind=pursuitMovements_ind;
+    m.numPursuitMovements=numPursuitMovements;
+    m.pursuitMovements_start=pursuitMovements_start;
+    m.pursuitMovements_end=pursuitMovements_end;
+    m.pursuitDurations=pursuitMovements_end-pursuitMovements_start;
+    m.pursuitAmplitudes= round(positions.gaze(pursuitMovements_end)-positions.gaze(pursuitMovements_start));
+    m.headpursuitAmplitude = round(positions.headYAW(pursuitMovements_end)-positions.headYAW(pursuitMovements_start));
+ 
 catch
-    disp('Trace too disordered to calculate movement parameters')
+    disp('Problem extracting saccades and smooth pursuit')
 end
 
 end
@@ -737,11 +740,11 @@ set(mydata.listbox,'string',[allData.trialList{1:end}],'value',plotThis);
 
 scaleF = allData.data.(trialname).scaleF;
 offsetF = allData.data.(trialname).offsetF;
-set(mydata.offsetFactdisp,'string',num2str(offsetF))
-set(mydata.scaleFactdisp,'string',num2str(scaleF))
+set(mydata.offsetFactdisp,'string',num2str(offsetF));
+set(mydata.scaleFactdisp,'string',num2str(scaleF));
 
 meas=MeasureTrial(mydata,trialname, scaleF, offsetF);
-assignin('base','MeasuresTrial',meas)
+assignin('base','MeasuresTrial',meas);
 
 positions=meas.positions;
 %[velocities, ~]= calcva(meas.positions,1);
@@ -787,6 +790,7 @@ title('Smooth pursuit and saccades extracted')
 hold on
 plot(positions.speakerAZ,'m')
 plot(positions.headYAW,'y')
+plot(positions.gaze, 'b')
 
 try
     plot([meas.TargetStart,meas.TargetStart],[-10,10], 'LineStyle', ':','LineWidth', 1, 'Color', 'm');
@@ -808,15 +812,10 @@ try % mark saccades in red
             
             xes =  meas.pursuitMovements_start(i-shortSeg):meas.pursuitMovements_end(i-shortSeg);
             yes = positions.eyesAZ(meas.pursuitMovements_start(i-shortSeg):meas.pursuitMovements_end(i-shortSeg))-netSaccade;
-            yesGAZE = yes + positions.headYAW(meas.pursuitMovements_start(i-shortSeg):meas.pursuitMovements_end(i-shortSeg));
-            
-%             thisSlope = meas.pursuitSlope(i);
-%            thisText = ['S', num2str(i),': ' num2str(thisSlope,3)];
-%            x = meas.pursuitMovements_start(i)+floor((meas.pursuitMovements_end(i)-meas.pursuitMovements_start(i))/4);
-%          y = positions.eyesAZ(x)+1*rem(i,2);
-%           text(x,y, thisText,'FontSize', 12, 'Color', 'b');
-            
-            plot(xes,yes,'linewidth',2.5,'color','b')
+       %     yesGAZE = yes + positions.headYAW(meas.pursuitMovements_start(i-shortSeg):meas.pursuitMovements_end(i-shortSeg));
+            yesGAZE = positions.gaze(meas.pursuitMovements_start(i-shortSeg):meas.pursuitMovements_end(i-shortSeg))-netSaccade;
+           
+            plot(xes,yes,'linewidth',1,'color','w')
             plot(xes,yesGAZE,'linewidth',2.5,'color','c')
             
             segment = [xes',yes];
@@ -838,25 +837,26 @@ try % mark saccades in red
             netSaccade = netSaccade + positions.eyesAZ(meas.Gshifts_end(i))- positions.eyesAZ(meas.Gshifts_start(i)) - drift ;
 
             if i == meas.numGshifts
-                plot(meas.pursuitMovements_start(end):meas.pursuitMovements_end(end),positions.eyesAZ(meas.pursuitMovements_start(end):meas.pursuitMovements_end(end))-netSaccade,'linewidth',2.5,'color','b')
+                plot(meas.pursuitMovements_start(end):meas.pursuitMovements_end(end),positions.eyesAZ(meas.pursuitMovements_start(end):meas.pursuitMovements_end(end))-netSaccade,'linewidth',1,'color','w')
                 plot(meas.pursuitMovements_start(end):meas.pursuitMovements_end(end),positions.eyesAZ(meas.pursuitMovements_start(end):meas.pursuitMovements_end(end))+positions.headYAW(meas.pursuitMovements_start(end):meas.pursuitMovements_end(end))-netSaccade,'linewidth',2.5,'color','c')
             end
         end
     else
         plot(positions.eyesAZ,'linewidth',2.5,'color','b')%% Plot whole trace because no saccades
     end
-    assignin('base','SpeakerMotion',positions.speakerAZ)
-    assignin('base','EyeMotion',positions.eyesAZ)
-    assignin('base','HeadMotion',positions.headYAW)
-    assignin('base','SPMotion',PursuitMotion)
-    assignin('base','SPGazeMotion',GazeMotion)
-    assignin('base','start_time', meas.pursuitMovements_start(1))
+%     assignin('base','SpeakerMotion',positions.speakerAZ)
+%     assignin('base','EyeMotion',positions.eyesAZ)
+%     assignin('base','HeadMotion',positions.headYAW)
+%     assignin('base','SPMotion',PursuitMotion)
+%     assignin('base','SPGazeMotion',GazeMotion)
+%     assignin('base','start_time', meas.pursuitMovements_start(1))
 catch
+    disp('error Tried and failed to plot smooth pursuit')
     disp(i)
     disp(meas.numGshifts)
     assignin('base','PursuitMotion',PursuitMotion)
   %  assignin('base','start_time', meas.pursuitMovements_start(1))
-    disp('error Tried and failed to plot smooth pursuit')
+    
 end
 
 % % Middle plot with the eye EL channel for blinks and sleep
@@ -983,7 +983,7 @@ vels=vels';
 end
 
 function [velocities, accelerations]= calcva(positions,n)
-disp(nargin)
+
 if nargin == 1
     n = 20;
 end
