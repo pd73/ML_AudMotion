@@ -36,6 +36,7 @@ function HeadFree_Ramp_Analysis()
 
 % Update 12/9/14 Rewrote the saccade detection section and improved
 % stability of the ploting
+% Update 12/11/2014 Major update to Excel Export and graphical interface
 
 mydata.MainFigure = figure('name', 'Data Viewer', 'numbertitle', 'off', 'menubar', 'none');
 
@@ -148,8 +149,10 @@ cd '\\smdnas\Paige-Lab\Paige Lab\Labs\A-Lab\Experiments\GSM';
 [xmlfile,PathName] = uigetfile('*hedr.xml','Select the S-Lab output file');
 
 set(mydata.reading,'visible','on');drawnow
+disp('Loading file')
+
 out = xml2struct([PathName, xmlfile]);
-assignin('base', 'var',out)
+%assignin('base', 'out',out)
 if ~strcmp(out.children(4).children(2).name, 'Sample_Rate')
     error('Check XML file - Sample_Rate not at Correct line')
 end
@@ -177,33 +180,38 @@ for i = 2:2:length(out.children(8).children)-1
     j = j+1;
 end
 
-samplecountIndex = varName{find(strcmp('Sample_Count',varName)),2};
-trialnumberindex = varName{find(strcmp('Trial_Index',varName)),2};
-speaker_preAZIndex = varName{find(strcmp('Pre_Inr_P2',varName)),2};
-speaker_stimAZIndex = varName{find(strcmp('Inr_Mov_P',varName)),2};
-LVtrialnumberindex = varName{find(strcmp('LV_Trial',varName)),2};
-numeventsindex = varName{find(strcmp('Event_Count',varName)),2};
+samplecountIndex = varName{strcmp('Sample_Count',varName),2};
+trialnumberindex = varName{strcmp('Trial_Index',varName),2};
+speaker_preAZIndex = varName{strcmp('Pre_Inr_P2',varName),2};
+speaker_stimAZIndex = varName{strcmp('Inr_Mov_P',varName),2};
+speaker_velAZIndex = varName{strcmp('Inr_Mov_V',varName),2}; 
+LVtrialnumberindex = varName{strcmp('LV_Trial',varName),2};
+numeventsindex = varName{strcmp('Event_Count',varName),2};
 inneroffset = -0.7109;% varName{find(strcmp('Inr_Offset',varName)),2}/100;
 
+Excelinfo = zeros((size(out.children,2)-1)/2-4, 7);
 
 for trialNum = 8:2:size(out.children,2)-1 % number of trials
 %     try
         %% try scale and offset so that mean of first and last 500ms matches eyes to speaker location
         trialendsample = str2double(out.children(trialNum).children(samplecountIndex).children.data);
+        
         lookuptrial = str2double(out.children(trialNum).children(trialnumberindex).children.data);
         speaker_preAZ = str2double(out.children(trialNum).children(speaker_preAZIndex).children.data);
         speaker_destinationAZ = str2double(out.children(trialNum).children(speaker_stimAZIndex).children.data);
+        speaker_velocityAZ = str2double(out.children(trialNum).children(speaker_velAZIndex).children.data);
         
-        Excel_Cluster(trialNum/2-3,:) = [...
+        Excelinfo(trialNum/2-3,:) = [...
             lookuptrial,... % Trial Number
             str2double(out.children(trialNum).children(LVtrialnumberindex).children.data),... %LV trial number
             trialendsample,... % Number of samples
             str2double(out.children(trialNum).children(numeventsindex).children.data),... % Number of events
             speaker_preAZ,... % where the speaker was at the start of the trial for calibration
-            speaker_destinationAZ... % Where the inner speaker heads to
+            speaker_destinationAZ,... % Where the inner speaker heads to
+            speaker_velocityAZ... % how fast it went 
             ];
         if trialendsample-trialstartsample < 1000
-            warning('Something Wierd with a short duration trial');
+            warning('Something wierd with a short duration trial');
             disp(trialNum);
             continue
         end
@@ -284,22 +292,28 @@ for trialNum = 8:2:size(out.children,2)-1 % number of trials
     disp(['trial_', num2str(trialNum/2-3)])
 end
 
-data.scaleAZ = 40/(mean(data.trial_3.Head_Yaw(end-1000:end))-mean(data.trial_1.Head_Yaw(end-1000:end)));
-data.offsetAZ = -mean(data.trial_2.Head_Yaw(end-1000:end))*data.scaleAZ;
-data.scaleEL = 20/(mean(data.trial_4.Head_Pitch(end-1000:end))-mean(data.trial_5.Head_Pitch(end-1000:end)));
-data.offsetEL = -mean(data.trial_2.Head_Pitch(end-1000:end))*data.scaleEL;
+iOne = ['trial_',num2str(find(Excelinfo(:,1) == 1, 1, 'last' ))];
+iTwo = ['trial_',num2str(find(Excelinfo(:,1) == 2, 1, 'last' ))];
+iThree = ['trial_',num2str(find(Excelinfo(:,1) == 3, 1, 'last' ))];
+iFour = ['trial_',num2str(find(Excelinfo(:,1) == 4, 1, 'last' ))];
+iFive = ['trial_',num2str(find(Excelinfo(:,1) == 5, 1, 'last' ))];
+
+data.scaleAZ = 40/(mean(data.(iThree).Head_Yaw(end-1000:end))-mean(data.(iOne).Head_Yaw(end-1000:end)));
+data.offsetAZ = -mean(data.(iTwo).Head_Yaw(end-1000:end))*data.scaleAZ;
+data.scaleEL = 20/(mean(data.(iFour).Head_Pitch(end-1000:end))-mean(data.(iFive).Head_Pitch(end-1000:end)));
+data.offsetEL = -mean(data.(iTwo).Head_Pitch(end-1000:end))*data.scaleEL;
 
 %disp(data.scaleAZ)
 
 set(mydata.reading,'visible','off');drawnow
-assignin('base', 'data',data)
+assignin('base', 'Excelinfo',Excelinfo)
 allData=get(mydata.MainFigure,'userdata');
-
+allData.Excelinfo = Excelinfo;
 allData.data=data;
 allData.Subject = xmlfile(1:6);
 allData.filename = xmlfile;
 %allData.infront = mean(data.trial_6.Head_Yaw(1:3000));
-allData.currentPlot=1;
+allData.currentPlot=6;
 allData.num_trials=num2cell(1:trialNum/2-3);
 set(mydata.MainFigure,'userdata',allData);
 SelectTrials([],[],mydata)
@@ -327,18 +341,25 @@ function SelectTrials(~,~,mydata)
 % set(mydata.selecting,'visible','on');drawnow
 allData=get(mydata.MainFigure,'userdata');
 f=fields(allData.data);
-trialList= [];
+trialList= cell(length(f)-4,1);
+trialkeyList = cell(length(f)-4,1);
 
 for i = 1:length(f)-4
-    meas=MeasureTrial(mydata,f{i},1,0);
-    allData.data.(f{i}).meas=meas;
-    trialList=[trialList {f(i)}];
+   % meas=MeasureTrial(mydata,f{i},1,0);
+   % allData.data.(f{i}).meas=meas;
+    disp(f{i})
+    trialList(i) ={f(i)};
+    %disp(['Trial_', num2str(allData.Excelinfo(i,1)), ' LVtrail_', num2str(allData.Excelinfo(i,2))])
+    trialkeyList{i} = ['Trial_', num2str(allData.Excelinfo(i,1)), '_LVtrial_', num2str(allData.Excelinfo(i,2))];
 end
+
 if isempty(trialList)
     errordlg('No trials meet criteria','No Trials');
 end
+
 uicontrol('style','text','position',[10,180,120,20],'string',['Trials: ',num2str(length(trialList))])
 allData.trialList = trialList;
+allData.trialkeyList = trialkeyList;
 allData.num_trials=length(trialList);
 
 mydata.flagthistrace=uicontrol(mydata.MainFigure,'style','checkbox',...
@@ -381,144 +402,172 @@ mydata.listbox = uicontrol('Style', 'listbox',...
     'Position', [10,200,120,320], 'Callback', {@ListCallback mydata});
 
 
-set(mydata.listbox,'string',[trialList{1:end}],...
+set(mydata.listbox,'string',[trialkeyList{1:end}],...
     'Callback', {@ListCallback mydata},'visible','on');
-PlotTrial([],[],mydata,1)
+PlotTrial([],[],mydata)
 
 end
 
 function Export(~,~,mydata)
 directoryname = uigetdir('', 'Please select the folder to save the Excel analysis output into');
+disp('Starting Excel Export')
 cd(directoryname)
 allData=get(mydata.MainFigure,'userdata');
 f=allData.trialList;
 filename = [allData.filename(1:end-4),'_',allData.filename(end-2:end),'_Slopes.xls'];
 %sheet = 1;% allData.filename(end-2:end);
 % Export to Excel
-xlswrite(filename, { 'Subject'	'Trial#'	'Start angle'	'End angle' 	'Velocity'	'Peak Pursuit'	'Mean Pursuit'	'Weighted Pursuit'	'# Pursuit segments'	'Fraction pursuit' 'Scale Factor' 'Offset'}, 'Sheet1', 'A1')
+xlswrite(filename, { 'Subject'	'LVTrial#'  'XLTrial'	'Start angle'	'End angle' 	'Velocity'	'Peak Gaze Pursuit'	'Mean Gaze Pursuit'	'Weighted Gaze Pursuit'	'# Pursuit segments'	'Fraction pursuit > 250ms'  'Fraction all pursuit'  'Scale Factor' 'Offset'}, 'Sheet1', 'A1')
+xlswrite(filename, { 'Subject'	'LVTrial#'  'XLTrial'	'Segment Start'  'Segment End'  'Segment Velocity' 	'Pursuit Segments > 250 ms'	}, 'Sheet2', 'A1')
+xlswrite(filename, { 'Subject'	'LVTrial#'  'XLTrial'	'Segment Start'  'Segment End'  'Segment Velocity' 	'Pursuit Segments < 250 ms'	}, 'Sheet3', 'A1')
+xlswrite(filename, { 'Subject'	'LVTrial#'  'XLTrial'	'Segment Start'  'Segment End'  'Segment Velocity' 	'Saccade Segments'	}, 'Sheet4', 'A1')
 
-for i = 1: length(f)
-    xlcell = ['A', num2str(i+1), ':L', num2str(i+1)];
+for i = 1:length(f)
+  
+    xlcell = ['A', num2str(i+1), ':M', num2str(i+1)];
     trialnumber=f{i}{1};
+    xltrialnum = allData.Excelinfo(i,1);
+    if allData.Excelinfo(i,7) == 0 % Skip if zero velocity
+        disp(['No speaker movement Trial ' num2str(i)])
+        xlswrite(filename, { allData.Subject,	trialnumber, xltrialnum, 'No speaker movement this trial'},  'Sheet1', ['A', num2str(i+1), ':D', num2str(i+1)])
+        xlswrite(filename, { allData.Subject,	trialnumber, xltrialnum, 'No speaker movement this trial'},  'Sheet2', ['A', num2str(i+1), ':D', num2str(i+1)])
+        xlswrite(filename, { allData.Subject,	trialnumber, xltrialnum, 'No speaker movement this trial'},  'Sheet3', ['A', num2str(i+1), ':D', num2str(i+1)])
+        xlswrite(filename, { allData.Subject,	trialnumber, xltrialnum, 'No speaker movement this trial'},  'Sheet4', ['A', num2str(i+1), ':D', num2str(i+1)])
+        continue
+    end
+    
     meas=MeasureTrial(mydata,trialnumber,allData.data.(trialnumber).scaleF,allData.data.(trialnumber).offsetF );
     disp(['Analyzing trial ' num2str(i)])
+    startAngle = allData.Excelinfo(i,5);
+    endAngle = allData.Excelinfo(i,6);
+    velocity = allData.Excelinfo(i,7);
     
-    try %Summary Page
+    try %Summary Page - Sheet 1
         validSegments = meas.pursuitDurations > 250;
-        pursuitVelocitiesList = abs(meas.pursuitMeanVelocities(validSegments));
-        
-        pursuitfraction = sum(meas.pursuitAmplitudes(validSegments))/(meas.end_position-meas.start_position);
+        pursuitVelocitiesList = abs(meas.pursuitMeanVelocities(validSegments));       
+        pursuitfraction = sum(meas.pursuitAmplitudes(validSegments))/(endAngle-startAngle);
+        allpursuitfraction = sum(meas.pursuitAmplitudes)/(endAngle-startAngle);
         numSegments = sum(validSegments);
         
         weightedMean = abs(sum(dot(meas.pursuitDurations(validSegments),pursuitVelocitiesList))/sum(meas.pursuitDurations(validSegments)));
         
-        % disp({ allData.Subject,	trialnumber,	meas.start_position, 	meas.end_position,	...
-        %     meas.ramp_speed,	max(pursuitVelocitiesList), mean(pursuitVelocitiesList)	,weightedMean,...
-        %     numSegments,	pursuitfraction, allData.data.(trialnumber).scaleF, allData.data.(trialnumber).offsetF})
-        
-        xlswrite(filename, { allData.Subject,	trialnumber,	meas.start_position, ...
-            meas.end_position,	meas.ramp_speed,	max(pursuitVelocitiesList), mean(pursuitVelocitiesList)	...
-            ,weightedMean,	numSegments,	pursuitfraction, allData.data.(trialnumber).scaleF,...
+        xlswrite(filename, { allData.Subject,	trialnumber,	xltrialnum, startAngle, ...
+            endAngle,	velocity,	max(pursuitVelocitiesList), mean(pursuitVelocitiesList(2:end))	...
+            ,weightedMean,	numSegments,	pursuitfraction, allpursuitfraction, allData.data.(trialnumber).scaleF,...
             allData.data.(trialnumber).offsetF}, 'Sheet1', xlcell)
     catch
-        disp(['No valid data for ' trialnumber])
-        xlswrite(filename, { allData.Subject,	trialnumber, 'No valid segments'},  'Sheet1', ['A', num2str(i+1), ':C', num2str(i+1)])
+        disp(['Problem writing sheet 1 (summary) data for ' trialnumber])
+        xlswrite(filename, { allData.Subject,	trialnumber,xltrialnum, 'No valid segments'},  'Sheet1', ['A', num2str(i+1), ':D', num2str(i+1)])
     end
     
-    try % Smooth Pursuit Page
-        outputPursuitsegments = {};
+    try % Smooth Pursuit Page - Sheet 2
+        outputPursuitsegments = {length(pursuitVelocitiesList),1};
         outputPursuitsegments{1} = allData.Subject;
         outputPursuitsegments{2} = trialnumber;
+        outputPursuitsegments{3} = xltrialnum;
         
         startList = meas.pursuitMovements_start(validSegments);
         endList = meas.pursuitMovements_end(validSegments);
         
         if isempty(endList)
-            error('No smooth pursuit')
+            error('No smooth pursuit greater than 250ms duration')
+            xlswrite(filename, { allData.Subject,	trialnumber, xltrialnum, 'No smooth pursuit > 250 ms duration'},  'Sheet2', ['A', num2str(i+1), ':D', num2str(i+1)])
         end
         
         for j = 1:length(pursuitVelocitiesList)
-            outputPursuitsegments{(j-1)*3+3} = startList(j);
-            outputPursuitsegments{(j-1)*3+4} = endList(j);
-            outputPursuitsegments{(j-1)*3+5} = pursuitVelocitiesList(j);
+            outputPursuitsegments{(j-1)*3+4} = startList(j);
+            outputPursuitsegments{(j-1)*3+5} = endList(j);
+            outputPursuitsegments{(j-1)*3+6} = pursuitVelocitiesList(j);
         end
         
         %disp(outputPursuitsegments)
-        if j > 8
-            xlcell = ['A', num2str(i),':A',char(64+(j-8)*3),num2str(i)];
+        rowLen = length(outputPursuitsegments);
+        if rowLen > 26
+            xlcell = ['A', num2str(i+1),':A',char(64+rowLen-26),num2str(i+1)];
         else
-            xlcell = ['A', num2str(i),':',char(64+j*3+2),num2str(i)];
+            xlcell = ['A', num2str(i+1),':',char(64+rowLen),num2str(i+1)];
         end
         xlswrite(filename, outputPursuitsegments, 'Sheet2', xlcell)
     catch
         disp(['No valid pursuit data for ' trialnumber])
-        xlswrite(filename, { allData.Subject,	trialnumber, 'No valid segments'},  'Sheet2', ['A', num2str(i+1), ':C', num2str(i+1)])
+        xlswrite(filename, { allData.Subject,	trialnumber, xltrialnum, 'No smooth pursuit < 250ms'},  'Sheet2', ['A', num2str(i+1), ':D', num2str(i+1)])
     end
     
-    try % Smooth pursuit shorter than 250 ms
-        outputPursuitsegments = {};
+    try % Smooth pursuit shorter than 250 ms - Sheet 3
+        tooshortpursuits = abs(meas.pursuitMeanVelocities(~validSegments));
+        
+        outputPursuitsegments = {length(tooshortpursuits),1};
         outputPursuitsegments{1} = allData.Subject;
         outputPursuitsegments{2} = trialnumber;
+        outputPursuitsegments{3} = xltrialnum;
         
         startList = meas.pursuitMovements_start(~validSegments);
         endList = meas.pursuitMovements_end(~validSegments);
-        tooshortpursuits = abs(meas.pursuitMeanVelocities(~validSegments));
+        
         
         if isempty(endList)
-            error('No short smooth pursuit')
+            error('No smooth pursuit shorter than 250ms')
+             xlswrite(filename, { allData.Subject,	trialnumber, xltrialnum, 'No smooth pursuit < 250 ms duration'},  'Sheet3', ['A', num2str(i+1), ':D', num2str(i+1)])
+
         end
         
         for j = 1:length(tooshortpursuits)
-            outputPursuitsegments{(j-1)*3+3} = startList(j);
-            outputPursuitsegments{(j-1)*3+4} = endList(j);
-            outputPursuitsegments{(j-1)*3+5} = tooshortpursuits(j);
+            outputPursuitsegments{(j-1)*3+4} = startList(j);
+            outputPursuitsegments{(j-1)*3+5} = endList(j);
+            outputPursuitsegments{(j-1)*3+6} = tooshortpursuits(j);
         end
         
         % disp(outputPursuitsegments)
-        if j > 8
-            xlcell = ['A', num2str(i),':A',char(64+(j-8)*3),num2str(i)];
+        rowLen = length(outputPursuitsegments);
+        if rowLen > 26
+            xlcell = ['A', num2str(i+1),':A',char(64+rowLen-26),num2str(i+1)];
         else
-            xlcell = ['A', num2str(i),':',char(64+j*3+2),num2str(i)];
+            xlcell = ['A', num2str(i+1),':',char(64+rowLen),num2str(i+1)];
         end
         xlswrite(filename, outputPursuitsegments, 'Sheet3', xlcell)
     catch
         disp(['No valid short pursuit data for ' trialnumber])
-        xlswrite(filename, { allData.Subject,	trialnumber, 'No valid segments'},  'Sheet3', ['A', num2str(i+1), ':C', num2str(i+1)])
+        xlswrite(filename, { allData.Subject,	trialnumber, xltrialnum, 'No valid segments'},  'Sheet3', ['A', num2str(i+1), ':D', num2str(i+1)])
     end
     
-    try % Saccades
-        outputPursuitsegments = {};
+    try % Saccades - Sheet 4
+        %saccadeSpeed = meas.GSpeakVelocity;
+        
+        outputPursuitsegments = {meas.numGshifts+3,1};
         outputPursuitsegments{1} = allData.Subject;
         outputPursuitsegments{2} = trialnumber;
+        outputPursuitsegments{3} = xltrialnum;
         
         startList = meas.Gshifts_start;
         endList = meas.Gshifts_end;
-        saccadeSpeed = meas.GSpeakVelocity;
+        saccadeSpeed = meas.Gamplitudes./meas.Gdurations'*1000;
         
         if isempty(endList)
             error('No saccades')
         end
         
-        for j = 1:length(saccadeSpeed)
-            outputPursuitsegments{(j-1)*3+3} = startList(j);
-            outputPursuitsegments{(j-1)*3+4} = endList(j);
-            outputPursuitsegments{(j-1)*3+5} = saccadeSpeed(j);
+        for j = 1:meas.numGshifts
+            outputPursuitsegments{(j-1)*3+4} = startList(j);
+            outputPursuitsegments{(j-1)*3+5} = endList(j);
+            outputPursuitsegments{(j-1)*3+6} = saccadeSpeed(j);
         end
         
         % disp(outputPursuitsegments)
-        if j > 8
-            xlcell = ['A', num2str(i),':A',char(64+(j-8)*3),num2str(i)];
+rowLen = length(outputPursuitsegments);
+        if rowLen > 26
+            xlcell = ['A', num2str(i+1),':A',char(64+rowLen-26),num2str(i+1)];
         else
-            xlcell = ['A', num2str(i),':',char(64+j*3+2),num2str(i)];
+            xlcell = ['A', num2str(i+1),':',char(64+rowLen),num2str(i+1)];
         end
         xlswrite(filename, outputPursuitsegments, 'Sheet4', xlcell)
     catch
         disp(['No valid saccade data for ' trialnumber])
-        xlswrite(filename, { allData.Subject,	trialnumber, 'No valid segments'},  'Sheet4', ['A', num2str(i+1), ':C', num2str(i+1)])
+        xlswrite(filename, { allData.Subject,	trialnumber,xltrialnum, 'No valid saccades'},  'Sheet4', ['A', num2str(i+1), ':D', num2str(i+1)])
     end
     
     
 end
+xlswrite(filename, { 'Export Complete'},  'Sheet1', ['A', num2str(i+2), ':A', num2str(i+2)])
 
 disp([ 'Export finished. Check Excel file ' filename ])
 
@@ -526,7 +575,7 @@ end
 
 function [m]= MeasureTrial(mydata,trialname, scaleF, offsetF)
 allData=get(mydata.MainFigure,'userdata');
-
+%disp(allData.data)
 scaleAZ = allData.data.scaleAZ;
 offsetAZ = allData.data.offsetAZ;
 %horizontal
@@ -542,7 +591,7 @@ try % calculate the trail start and end positions
     m.start_position = round(mean(positions.speakerAZ(200:300)));
     m.end_position = round(mean(positions.speakerAZ(end-300:end)));
     
-    % Determine when the
+    % Determine when the speaker starts moving
     ramptrail =  (positions.speakerAZ'-m.start_position)*sign(m.end_position-m.start_position);
     x1 = find(ramptrail > 0.05*max(ramptrail),1);
     x2 = find(ramptrail > 0.95*max(ramptrail),1);
@@ -560,11 +609,14 @@ try % calculate the trail start and end positions
     X = headvels(x1:x2);
     Y = x1:x2;
     start_head =floor(roots(polyfit(X,Y,1))+x1);
+    if start_head < start_time - 500
+        start_head = 1;
+    end
     
     % Find the start of the head movement by interpolating back from the
     % midpoint of the start of the movement
-    gazevels = abs(velocities.gazeAZ(start_time-500:end_time));
-    assignin('base', 'gazevels', gazevels)
+    %gazevels = abs(velocities.gazeAZ(start_time-500:end_time));
+  %  assignin('base', 'gazevels', gazevels)
     x1 = find(headvels > 0.25*max(headvels),1);
     x2 = find(headvels > 0.75*max(headvels),1);
     X = headvels(x1:x2);
@@ -579,6 +631,10 @@ try % calculate the trail start and end positions
     else
         startplot=start_time-500; % starts the plot 500ms prior to the arm movement
     end
+    
+%     if start_head < start_time - 500
+%         start_head = startplot;
+%     end
 
     if end_time+1500 > length(positions.speakerAZ)
         endplot=length(positions.speakerAZ);
@@ -622,8 +678,8 @@ try % calculate the trail start and end positions
     pursuitMovements_ind=pursuitMovements_ind(pursuitMovements_ind>100);
     
     Gshifts=find(diff(Gshifts_ind)>20);
-    assignin('base', 'Gshifts', Gshifts)
-    assignin('base', 'Gshifts_ind', Gshifts_ind)
+   % assignin('base', 'Gshifts', Gshifts)
+   % assignin('base', 'Gshifts_ind', Gshifts_ind)
     
     %  pursuitMovements= find(diff(pursuitMovements_ind)>5);
     
@@ -711,13 +767,15 @@ try % calculate the trail start and end positions
  
 catch
     disp('Problem extracting saccades and smooth pursuit')
+    m.positions=positions;
+    m.numGshifts = 0;
 end
 
 end
 
 function PlotTrial(~,~,mydata,plotThis,~)
 allData=get(mydata.MainFigure,'userdata');
-
+assignin('base','allData',allData);
 if nargin<4
     plotThis=allData.currentPlot;
 end
@@ -770,8 +828,21 @@ plot(gaze,'b')
 plot([0,length(allData.data.(trialname).speaker)], [0 0] , 'r')
 plot([0,length(allData.data.(trialname).speaker)], [4 4] , 'r:')
 plot([0,length(allData.data.(trialname).speaker)], [-4 -4] , 'r:')
-title('Arm motion, Eyes and Head Yaw for full record')
+title({'Arm motion, Eyes and Head Yaw for full record',allData.filename(1:end-9)})
 
+if allData.Excelinfo(plotThis, 7) == 0
+    subplot(3,1,2)
+    hold off
+    plot([0,length(allData.data.(trialname).speaker)], [0 0] , 'r')
+    title('No Speaker Movement on this Trial')
+    hold on
+    subplot(3,1,3)
+    hold off
+    plot([0,length(allData.data.(trialname).speaker)], [0 0] , 'r')
+    title('No Speaker Movement on this Trial')
+    hold on
+    return
+end
 % Plot of head motions
 subplot(3,1,2)
 hold off
@@ -786,7 +857,7 @@ subplot(3,1,3)
 
 hold off
 plot(positions.eyesAZ,'g')
-title('Smooth pursuit and saccades extracted')
+title({'Smooth pursuit and saccades extracted',['Excel trial ',num2str(allData.Excelinfo(plotThis,1)) ,' : ',sprintf('Az1 = %d Az2 = %d Vel = %d',allData.Excelinfo(plotThis,5:7))]})
 hold on
 plot(positions.speakerAZ,'m')
 plot(positions.headYAW,'y')
@@ -798,7 +869,6 @@ try
 catch
     disp('Tried and failed - meas.TargetStart')
 end
-
 
 netSaccade = 0;
 shortSeg = 0;
@@ -997,315 +1067,315 @@ accelerations.aeyesAZ=ParabolicDiff(velocities.veyesAZ,n);
 accelerations.gazeAZ=ParabolicDiff(velocities.gazeAZ,n);
 accelerations.headYAW=ParabolicDiff(velocities.headYAW,2*n);
 end
+% 
+% function y=read_raw(pathname, filename)
+% % [filename,pathname] = uigetfile('*.*'); Matlab program to work with
+% %Host App: Client for PXI 11_08_02 PXI App: Global 11_06_02; Record module
+% %11_06_02 Adapted from Scott Seidman's version readLV and Anand Joshi's
+% %version LVdatareader_v1 Modified by JR: 09.12.05
+% 
+% % INPUT:       y=LVdatareader_JR1('H:\VN-Lab\ct0830L.000')
+% %
+% % OUTPUT:      label: 'Labview data acquisition program'
+% %              version: 3 labname: ''
+% %             userinfo: [1x66 char] username: 't c'
+% %                 date: '8/30/2005' time: '11:56 AM'
+% %             filename: 'ct0830L.000'
+% %          configfiles: 'Glab_reynolds_TRQ,Exptcfg LV7Glab1_llb v2'
+% %             expttype: ''
+% %        stickycomment: ''
+% %              comment: ''
+% %             scanrate: 1000
+% %         interchdelay: 3.0000e-006
+% %            numofchan: 9
+% %             channame: {1x9 cell}
+% %              channum: [0 1 2 5 6 8 9 14 15]
+% %       chansamplerate: [500 500 500 500 500 500 500 500 500]
+% %                 gain: [1x9 double]
+% %      scalemultiplier: [1x9 double]
+% %               offset: [0 0 0 0 0 0 0 0 0]
+% %          scalefactor: [18 36 40 4.8000 4.8000 7.7220 7.7220 1 2.8000]
+% %         typeofsignal: [0 1 0 0 0 0 0 0 0]
+% %      State_variables: {11x1 cell}
+% %           eventnames: {48x1 cell}
+% %     eventdescription: {48x1 cell}
+% %        num_of_trials: 4 triallocation: [4x1 double]
+% %                trial: [1x4 struct]
+% %to access events: y.trial(m).event.'eventname' to access state variables:
+% %y.trial(m).state_var.'state variable name' Each Event will have {lowfreq,
+% %high freq, lowres_occ, highres_occ} Each State variable will further have
+% %"value" as its field
+% 
+% if nargin == 0
+%     [filename, pathname] = uigetfile('*.0*');
+% end
+% 
+% 
+% 
+% % function y=LVdatareader_v1(filename)
+% tic
+% %Program to read the binary header and the data stored.
+% % filename=input('Input filename with path:   ','s');
+% fid=fopen([pathname,filename],'r','b');					% big-endian format read.
+% % Read the header
+% headerlength = fread(fid,1,'int32');            %read header length (4 byte= int32)
+% y.label = char((fread(fid,32,'char'))');		%Label info "Labview data acquisition program"
+% y.version = fread(fid,1,'float32');				%Version info to keep track of datafiles
+% 
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% %Head Information
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% 
+% %Lab name and version information
+% stringlgth1 = fread(fid,1,'int32');
+% y.labname = char((fread(fid,stringlgth1,'char'))');
+% 
+% status = fseek(fid,94,-1);
+% % read user supplied header, (subj name,date, time, filename)
+% userinfolength = fread(fid,1,'int32');
+% y.userinfo=char((fread(fid,userinfolength,'char'))');
+% 
+% rem = y.userinfo;
+% str = char(13); % ascill equivalent of carriage return '\r'
+% while true
+%     [token rem] = strtok(rem,str);
+%     
+%     if(strcmp(strtok(token),'Name'))
+%         y.username = token(8:end);
+%     elseif(strcmp(strtok(token),'Date'))
+%         y.date = token(8:end);
+%     elseif(strcmp(strtok(token),'Time'))
+%         y.time = token(8:end);
+%     elseif(strcmp(strtok(token),'Filename'))
+%         y.filename = token(12:end);
+%     end
+%     
+%     if isempty(token),break; end
+% end
+% 
+% %Configuration files information
+% status = fseek(fid,298,-1);
+% configlgth = fread(fid,1,'int32');
+% y.configfiles = char((fread(fid,configlgth,'char'))');
+% 
+% % Experiment type information
+% status = fseek(fid,452,-1);
+% stringlgth2 = fread(fid,1,'int32');
+% y.expttype = char((fread(fid,stringlgth2,'char'))');
+% 
+% %Sticky comments for the entire experiment
+% status = fseek(fid,506,-1);
+% stringlgth3 = fread(fid,1,'int32');
+% y.stickycomment = char((fread(fid,stringlgth3,'char'))');
+% 
+% % read user supplied comments from header block
+% status = fseek(fid,610,-1);
+% commentlength = fread(fid,1,'int32');
+% y.comment = char((fread(fid,commentlength,'char'))');
+% 
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% % Hardware Information
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% status = fseek(fid,1114,-1);
+% y.scanrate = fread(fid,1,'float32');			%Scan rate stored from the clk config
+% %assignin('base','scanrate',y.scanrate) ASSIGNIN sends scanrate to current
+% %workspace
+% 
+% y.interchdelay = fread(fid,1,'float32');		%Interchannel delay acqrd. from clk config.
+% y.numofchan = fread(fid,1,'int32');
+% chanlistlength = fread(fid,1,'int32');
+% chanacqd = char((fread(fid,chanlistlength,'char'))');
+% 
+% %parse channel names into cell string
+% startchanname=[ 1 findstr(',',chanacqd)+1];	%finds starting point of each chan name in the list
+% endchanname=[ findstr(',',chanacqd)-1 length(chanacqd)];	%finds end point of each chan name in the list
+% 
+% for i=1:y.numofchan
+%     channame(i)={chanacqd(startchanname(i):endchanname(i))};	%split chan names into array
+%     y.channame(i)=channame(i);
+% end
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% %Channel Information
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% status = fseek(fid,1450,-1);
+% 
+% for i=1:y.numofchan
+%     y.channum(i)=fread(fid,1,'int32');
+%     y.chansamplerate(i) = fread(fid,1,'float32');
+%     y.gain(i)=fread(fid,1,'float32');
+%     %note, gain seems wrong!!  Says 0.5, Should be 1.0?5
+%     y.scalemultiplier(i)=fread(fid,1,'float32');
+%     %note, scalemultiplier seems wrong!!  Says 0.3052, Should be 1.0?
+%     y.offset(i)=fread(fid,1,'float32');
+%     y.scalefactor(i)=fread(fid,1,'float32');
+%     y.typeofsignal(i)=fread(fid,1,'int32');		%0 = position , 1 = Velocity, 2 = acceleration
+%     
+% end
+% 
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% % State variable declaration and description
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% num_of_state_variables = fread(fid,1,'int32');
+% lgth_of_state_variable_string = fread(fid,1,'int32');
+% State_variables = char((fread(fid,lgth_of_state_variable_string,'char'))');
+% y.State_variables = parse_string(State_variables,',');  % parsing out the comma separated names into string array
+% 
+% % Max number of State variables possi
+% status = fseek(fid,2000-lgth_of_state_variable_string,0);%offset to read the event names
+% 
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% %Event/Epoch Information
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% num_of_eventstype = fread(fid,1,'int32');
+% lgth_of_event_string = fread(fid,1,'int32');
+% eventnames = char((fread(fid,lgth_of_event_string,'char'))');
+% y.eventnames = parse_string(eventnames,',');    %converting eventnames string into array of event names strings
+% 
+% status = fseek(fid,500-lgth_of_event_string,0);         %Offset to read the descriptions
+% 
+% %Events/ Epoch description
+% lgth_of_eventdescription = fread(fid,1,'int32');
+% eventdescription = char((fread(fid,lgth_of_eventdescription,'char'))'); % event description is newline separated
+% % converting the carriage return string description into array of string
+% y.eventdescription = parse_string(eventdescription,sprintf('\r'));
+% 
+% status = fseek(fid,2500-lgth_of_eventdescription,0);
+% 
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% %Trial information
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% y.num_of_trials = fread(fid,1,'int32');
+% % get starting location of the trial data
+% y.triallocation = fread(fid,y.num_of_trials,'int32');
+% offset = 4 + 4*y.num_of_trials;
+% 
+% for m = 1:y.num_of_trials
+%     
+%     %Trial location and reading
+%     status = fseek(fid,(y.triallocation(m)+offset),-1);
+%     %reading the trial
+%     total_trial_hdrlength = fread(fid,1,'int32');
+%     
+%     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%     %State Variable Structure: y.trial(m).state_var.'state var name' Assign
+%     %State variable names as fields of state_var structure
+%     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%     num_of_state_variables = fread(fid,1,'int32');
+%     y.trial(m).state_var = [];
+%     for j = 1:num_of_state_variables
+%         
+%         state_var_name_lgth(j) = fread(fid,1,'int32');
+%         tmpstatevarname = char((fread(fid,state_var_name_lgth(j),'char'))');
+%         if (isempty(tmpstatevarname))
+%             tmpstatevarname = ('empty string');
+%         end
+%         tmpstatevarname = strrep(tmpstatevarname,' ','_');
+%         tmpstatevarname = strrep(tmpstatevarname,'#','_');
+%         status = fseek(fid,(20 - state_var_name_lgth(j)),0); % Max character for State variable name  = 20.
+%         value = fread(fid,1,'float32');
+%         y.trial(m).state_var = setfield(y.trial(m).state_var,tmpstatevarname,value);
+%     end
+%     
+%     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%     %Events Structure: y.trial(m).event.'event name' Struct Event ={ Low
+%     %freq, High freq, lowres_occ, highres_occ} Each individual event
+%     %structure identified by its own name will be fields of the
+%     %trial.event. e.g. y.trial.event.STROT
+%     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%     
+%     total_num_of_event_types = fread(fid,1,'int32');
+%     y.trial(m).event = [];
+%     for k = 1:total_num_of_event_types
+%         trialevent_name_lgth(k) = fread(fid,1,'int32');
+%         
+%         tmpeventname = char((fread(fid,trialevent_name_lgth(k),'char'))');
+%         if (isempty(tmpeventname))
+%             tmpeventname = ('empty string');
+%         end
+%         tmpeventname = strrep(tmpeventname,' ','_');
+%         tmpeventname = strrep(tmpeventname,'#','_');
+%         status = fseek(fid,(20 - trialevent_name_lgth(k)),0); % Max character for event name  = 20.
+%         eventdata.lowfreq = fread(fid,1,'float32');
+%         eventdata.highfreq = fread(fid,1,'float32');
+%         num_of_events_of_one_type = fread(fid,1,'int32');
+%         %Read the Lowres occurences and Highres occurences in array format
+%         for n=(1:num_of_events_of_one_type)
+%             eventdata.lowres_occ(n,1) = fread(fid,1,'int32');
+%             eventdata.highres_occ(n,1) = fread(fid,1,'int32');
+%         end
+%         y.trial(m).event = setfield(y.trial(m).event,tmpeventname,eventdata);
+%         clear eventdata; %reset eventdata within for loop for next event
+%     end
+%     
+%     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%     %DATA STORAGE Data is stored in 2D array: Rows = # channels, Cols =
+%     %data/channel Datasize is a 2D array equal to {# channels, size of each
+%     %channel} For the current version, each channel will have the same
+%     %size. read data data=fread(fid,'int16');
+%     % to get into array of proper name in base workspace
+%     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%     y.trial(m).datasize = fread(fid,y.numofchan,'int32');
+%     
+%     
+%     y.trial(m).data=[];
+%     for i=1:y.numofchan
+%         % parse data into channels
+%         datasplit =(fread(fid,y.trial(m).datasize(i),'int16')).*y.scalemultiplier(i).*y.scalefactor(i);
+%         % strip off leading blanks
+%         tmpname=char(channame(i));
+%         tmpname=tmpname(abs(tmpname)~=32);
+%         % create channel variable in base workspace
+%         %keyboard;
+%         y.trial(m).data = setfield(y.trial(m).data,tmpname,datasplit);
+%         
+%         %y.trial(m) = struct(tmpname,datasplit); assignin('caller',[tmpname
+%         %num2str(m)], datasplit);
+%         
+%     end
+%     %      y.trial(m).time =
+%     %      (1:y.trial(m).datasize(1))/y.chansamplerate(1);
+%     %y.trial(m).data = struct({[tmpname]},{[datasplit]});
+%     % pause;
+% end
+% t = toc;
+% %%%%%%%%%%%%%%%
+% 
+% fclose(fid);
+% end
+% 
+% function parsed_str=parse_string(str,delimiter)
+% % creates a 2D cell matrix of a string parsed by spaces and new lines
+% parsed_str={};
+% rownum=1;
+% 
+% while(not(isempty(str)))
+%     [line,str]=strtok(str,delimiter);
+%     colnum=1;
+%     parsed_str(rownum,colnum)={line};
+%     rownum=rownum+1;
+% end
+% end
 
-function y=read_raw(pathname, filename)
-% [filename,pathname] = uigetfile('*.*'); Matlab program to work with
-%Host App: Client for PXI 11_08_02 PXI App: Global 11_06_02; Record module
-%11_06_02 Adapted from Scott Seidman's version readLV and Anand Joshi's
-%version LVdatareader_v1 Modified by JR: 09.12.05
-
-% INPUT:       y=LVdatareader_JR1('H:\VN-Lab\ct0830L.000')
-%
-% OUTPUT:      label: 'Labview data acquisition program'
-%              version: 3 labname: ''
-%             userinfo: [1x66 char] username: 't c'
-%                 date: '8/30/2005' time: '11:56 AM'
-%             filename: 'ct0830L.000'
-%          configfiles: 'Glab_reynolds_TRQ,Exptcfg LV7Glab1_llb v2'
-%             expttype: ''
-%        stickycomment: ''
-%              comment: ''
-%             scanrate: 1000
-%         interchdelay: 3.0000e-006
-%            numofchan: 9
-%             channame: {1x9 cell}
-%              channum: [0 1 2 5 6 8 9 14 15]
-%       chansamplerate: [500 500 500 500 500 500 500 500 500]
-%                 gain: [1x9 double]
-%      scalemultiplier: [1x9 double]
-%               offset: [0 0 0 0 0 0 0 0 0]
-%          scalefactor: [18 36 40 4.8000 4.8000 7.7220 7.7220 1 2.8000]
-%         typeofsignal: [0 1 0 0 0 0 0 0 0]
-%      State_variables: {11x1 cell}
-%           eventnames: {48x1 cell}
-%     eventdescription: {48x1 cell}
-%        num_of_trials: 4 triallocation: [4x1 double]
-%                trial: [1x4 struct]
-%to access events: y.trial(m).event.'eventname' to access state variables:
-%y.trial(m).state_var.'state variable name' Each Event will have {lowfreq,
-%high freq, lowres_occ, highres_occ} Each State variable will further have
-%"value" as its field
-
-if nargin == 0
-    [filename, pathname] = uigetfile('*.0*');
-end
-
-
-
-% function y=LVdatareader_v1(filename)
-tic
-%Program to read the binary header and the data stored.
-% filename=input('Input filename with path:   ','s');
-fid=fopen([pathname,filename],'r','b');					% big-endian format read.
-% Read the header
-headerlength = fread(fid,1,'int32');            %read header length (4 byte= int32)
-y.label = char((fread(fid,32,'char'))');		%Label info "Labview data acquisition program"
-y.version = fread(fid,1,'float32');				%Version info to keep track of datafiles
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%Head Information
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%Lab name and version information
-stringlgth1 = fread(fid,1,'int32');
-y.labname = char((fread(fid,stringlgth1,'char'))');
-
-status = fseek(fid,94,-1);
-% read user supplied header, (subj name,date, time, filename)
-userinfolength = fread(fid,1,'int32');
-y.userinfo=char((fread(fid,userinfolength,'char'))');
-
-rem = y.userinfo;
-str = char(13); % ascill equivalent of carriage return '\r'
-while true
-    [token rem] = strtok(rem,str);
-    
-    if(strcmp(strtok(token),'Name'))
-        y.username = token(8:end);
-    elseif(strcmp(strtok(token),'Date'))
-        y.date = token(8:end);
-    elseif(strcmp(strtok(token),'Time'))
-        y.time = token(8:end);
-    elseif(strcmp(strtok(token),'Filename'))
-        y.filename = token(12:end);
-    end
-    
-    if isempty(token),break; end
-end
-
-%Configuration files information
-status = fseek(fid,298,-1);
-configlgth = fread(fid,1,'int32');
-y.configfiles = char((fread(fid,configlgth,'char'))');
-
-% Experiment type information
-status = fseek(fid,452,-1);
-stringlgth2 = fread(fid,1,'int32');
-y.expttype = char((fread(fid,stringlgth2,'char'))');
-
-%Sticky comments for the entire experiment
-status = fseek(fid,506,-1);
-stringlgth3 = fread(fid,1,'int32');
-y.stickycomment = char((fread(fid,stringlgth3,'char'))');
-
-% read user supplied comments from header block
-status = fseek(fid,610,-1);
-commentlength = fread(fid,1,'int32');
-y.comment = char((fread(fid,commentlength,'char'))');
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Hardware Information
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-status = fseek(fid,1114,-1);
-y.scanrate = fread(fid,1,'float32');			%Scan rate stored from the clk config
-%assignin('base','scanrate',y.scanrate) ASSIGNIN sends scanrate to current
-%workspace
-
-y.interchdelay = fread(fid,1,'float32');		%Interchannel delay acqrd. from clk config.
-y.numofchan = fread(fid,1,'int32');
-chanlistlength = fread(fid,1,'int32');
-chanacqd = char((fread(fid,chanlistlength,'char'))');
-
-%parse channel names into cell string
-startchanname=[ 1 findstr(',',chanacqd)+1];	%finds starting point of each chan name in the list
-endchanname=[ findstr(',',chanacqd)-1 length(chanacqd)];	%finds end point of each chan name in the list
-
-for i=1:y.numofchan
-    channame(i)={chanacqd(startchanname(i):endchanname(i))};	%split chan names into array
-    y.channame(i)=channame(i);
-end
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%Channel Information
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-status = fseek(fid,1450,-1);
-
-for i=1:y.numofchan
-    y.channum(i)=fread(fid,1,'int32');
-    y.chansamplerate(i) = fread(fid,1,'float32');
-    y.gain(i)=fread(fid,1,'float32');
-    %note, gain seems wrong!!  Says 0.5, Should be 1.0?5
-    y.scalemultiplier(i)=fread(fid,1,'float32');
-    %note, scalemultiplier seems wrong!!  Says 0.3052, Should be 1.0?
-    y.offset(i)=fread(fid,1,'float32');
-    y.scalefactor(i)=fread(fid,1,'float32');
-    y.typeofsignal(i)=fread(fid,1,'int32');		%0 = position , 1 = Velocity, 2 = acceleration
-    
-end
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% State variable declaration and description
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-num_of_state_variables = fread(fid,1,'int32');
-lgth_of_state_variable_string = fread(fid,1,'int32');
-State_variables = char((fread(fid,lgth_of_state_variable_string,'char'))');
-y.State_variables = parse_string(State_variables,',');  % parsing out the comma separated names into string array
-
-% Max number of State variables possi
-status = fseek(fid,2000-lgth_of_state_variable_string,0);%offset to read the event names
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%Event/Epoch Information
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-num_of_eventstype = fread(fid,1,'int32');
-lgth_of_event_string = fread(fid,1,'int32');
-eventnames = char((fread(fid,lgth_of_event_string,'char'))');
-y.eventnames = parse_string(eventnames,',');    %converting eventnames string into array of event names strings
-
-status = fseek(fid,500-lgth_of_event_string,0);         %Offset to read the descriptions
-
-%Events/ Epoch description
-lgth_of_eventdescription = fread(fid,1,'int32');
-eventdescription = char((fread(fid,lgth_of_eventdescription,'char'))'); % event description is newline separated
-% converting the carriage return string description into array of string
-y.eventdescription = parse_string(eventdescription,sprintf('\r'));
-
-status = fseek(fid,2500-lgth_of_eventdescription,0);
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%Trial information
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-y.num_of_trials = fread(fid,1,'int32');
-% get starting location of the trial data
-y.triallocation = fread(fid,y.num_of_trials,'int32');
-offset = 4 + 4*y.num_of_trials;
-
-for m = 1:y.num_of_trials
-    
-    %Trial location and reading
-    status = fseek(fid,(y.triallocation(m)+offset),-1);
-    %reading the trial
-    total_trial_hdrlength = fread(fid,1,'int32');
-    
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    %State Variable Structure: y.trial(m).state_var.'state var name' Assign
-    %State variable names as fields of state_var structure
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    num_of_state_variables = fread(fid,1,'int32');
-    y.trial(m).state_var = [];
-    for j = 1:num_of_state_variables
-        
-        state_var_name_lgth(j) = fread(fid,1,'int32');
-        tmpstatevarname = char((fread(fid,state_var_name_lgth(j),'char'))');
-        if (isempty(tmpstatevarname))
-            tmpstatevarname = ('empty string');
-        end
-        tmpstatevarname = strrep(tmpstatevarname,' ','_');
-        tmpstatevarname = strrep(tmpstatevarname,'#','_');
-        status = fseek(fid,(20 - state_var_name_lgth(j)),0); % Max character for State variable name  = 20.
-        value = fread(fid,1,'float32');
-        y.trial(m).state_var = setfield(y.trial(m).state_var,tmpstatevarname,value);
-    end
-    
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    %Events Structure: y.trial(m).event.'event name' Struct Event ={ Low
-    %freq, High freq, lowres_occ, highres_occ} Each individual event
-    %structure identified by its own name will be fields of the
-    %trial.event. e.g. y.trial.event.STROT
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    
-    total_num_of_event_types = fread(fid,1,'int32');
-    y.trial(m).event = [];
-    for k = 1:total_num_of_event_types
-        trialevent_name_lgth(k) = fread(fid,1,'int32');
-        
-        tmpeventname = char((fread(fid,trialevent_name_lgth(k),'char'))');
-        if (isempty(tmpeventname))
-            tmpeventname = ('empty string');
-        end
-        tmpeventname = strrep(tmpeventname,' ','_');
-        tmpeventname = strrep(tmpeventname,'#','_');
-        status = fseek(fid,(20 - trialevent_name_lgth(k)),0); % Max character for event name  = 20.
-        eventdata.lowfreq = fread(fid,1,'float32');
-        eventdata.highfreq = fread(fid,1,'float32');
-        num_of_events_of_one_type = fread(fid,1,'int32');
-        %Read the Lowres occurences and Highres occurences in array format
-        for n=(1:num_of_events_of_one_type)
-            eventdata.lowres_occ(n,1) = fread(fid,1,'int32');
-            eventdata.highres_occ(n,1) = fread(fid,1,'int32');
-        end
-        y.trial(m).event = setfield(y.trial(m).event,tmpeventname,eventdata);
-        clear eventdata; %reset eventdata within for loop for next event
-    end
-    
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    %DATA STORAGE Data is stored in 2D array: Rows = # channels, Cols =
-    %data/channel Datasize is a 2D array equal to {# channels, size of each
-    %channel} For the current version, each channel will have the same
-    %size. read data data=fread(fid,'int16');
-    % to get into array of proper name in base workspace
-    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-    y.trial(m).datasize = fread(fid,y.numofchan,'int32');
-    
-    
-    y.trial(m).data=[];
-    for i=1:y.numofchan
-        % parse data into channels
-        datasplit =(fread(fid,y.trial(m).datasize(i),'int16')).*y.scalemultiplier(i).*y.scalefactor(i);
-        % strip off leading blanks
-        tmpname=char(channame(i));
-        tmpname=tmpname(abs(tmpname)~=32);
-        % create channel variable in base workspace
-        %keyboard;
-        y.trial(m).data = setfield(y.trial(m).data,tmpname,datasplit);
-        
-        %y.trial(m) = struct(tmpname,datasplit); assignin('caller',[tmpname
-        %num2str(m)], datasplit);
-        
-    end
-    %      y.trial(m).time =
-    %      (1:y.trial(m).datasize(1))/y.chansamplerate(1);
-    %y.trial(m).data = struct({[tmpname]},{[datasplit]});
-    % pause;
-end
-t = toc;
-%%%%%%%%%%%%%%%
-
-fclose(fid);
-end
-
-function parsed_str=parse_string(str,delimiter)
-% creates a 2D cell matrix of a string parsed by spaces and new lines
-parsed_str={};
-rownum=1;
-
-while(not(isempty(str)))
-    [line,str]=strtok(str,delimiter);
-    colnum=1;
-    parsed_str(rownum,colnum)={line};
-    rownum=rownum+1;
-end
-end
-
-function [startITD, endITD, ITDrate]= lookupheadphoneITD(trialNum)
-conditionsList = [0,0,1;0,0,1;0,0,1;0,0,1;0,300,100;300,100,300;100,-300,300;...
-    -300,300,100;300,-150,300;-150,50,100;50,300,300;300,-300,100;-300,300,100;...
-    300,-150,300;-150,50,100;50,-350,100;-350,250,300;250,-150,100;-150,-300,300;...
-    -300,300,300;300,-100,300;-100,300,100;300,-300,300;-300,0,300;0,0,1;0,0,1;...
-    0,0,1;0,-300,100;-300,-100,300;-100,300,300;300,-300,100;-300,150,300;150,-50,100;...
-    -50,-300,300;-300,300,100;300,-300,100;-300,150,300;150,-50,100;-50,350,100;...
-    350,-250,300;-250,150,100;150,300,300;300,-300,300;-300,100,300;100,-300,100;...
-    -300,300,300;300,0,300;0,0,1;0,0,1;0,0,1];
-if trialNum > length(conditionsList)
-    disp(trialNum)
-    startITD = 0;
-    endITD = 0;
-    ITDrate = 1;
-else
-    startITD = conditionsList(trialNum, 1)/10;
-    endITD = conditionsList(trialNum, 2)/10;
-    ITDrate = conditionsList(trialNum, 3)/10;
-end
-end
+% function [startITD, endITD, ITDrate]= lookupheadphoneITD(trialNum)
+% conditionsList = [0,0,1;0,0,1;0,0,1;0,0,1;0,300,100;300,100,300;100,-300,300;...
+%     -300,300,100;300,-150,300;-150,50,100;50,300,300;300,-300,100;-300,300,100;...
+%     300,-150,300;-150,50,100;50,-350,100;-350,250,300;250,-150,100;-150,-300,300;...
+%     -300,300,300;300,-100,300;-100,300,100;300,-300,300;-300,0,300;0,0,1;0,0,1;...
+%     0,0,1;0,-300,100;-300,-100,300;-100,300,300;300,-300,100;-300,150,300;150,-50,100;...
+%     -50,-300,300;-300,300,100;300,-300,100;-300,150,300;150,-50,100;-50,350,100;...
+%     350,-250,300;-250,150,100;150,300,300;300,-300,300;-300,100,300;100,-300,100;...
+%     -300,300,300;300,0,300;0,0,1;0,0,1;0,0,1];
+% if trialNum > length(conditionsList)
+%     disp(trialNum)
+%     startITD = 0;
+%     endITD = 0;
+%     ITDrate = 1;
+% else
+%     startITD = conditionsList(trialNum, 1)/10;
+%     endITD = conditionsList(trialNum, 2)/10;
+%     ITDrate = conditionsList(trialNum, 3)/10;
+% end
+% end
 
 function [startpos, endpos, rate]= lookupimaginaryITD(trialNum)
 conditionsList = [0,0,1;20,20,1;-20,-20,1;0,0,1;30,-30,10;-30,30,10;30,-30,10;-30,30,10;...
