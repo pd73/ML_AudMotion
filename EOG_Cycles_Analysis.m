@@ -27,6 +27,7 @@ function EOG_Cycles_Analysis()
 %   the program
 % Update 7/8/2014 Modify desaccading to remove 50 ms before and after
 % saccade. Send snippet "start_time" to work space
+% Update 12/16/2014 Add the 'saccade' at start of movement
 
 
 mydata.MainFigure = figure('name', 'Data Viewer', 'numbertitle', 'off', 'menubar', 'none');
@@ -137,11 +138,26 @@ cd '\\smdnas\Paige-Lab\Paige Lab\Labs\A-Lab\Experiments\GSM';
 [xmlfile,PathName] = uigetfile('*hedr.xml','Select the S-Lab output file');
 
 set(mydata.reading,'visible','on');drawnow
+disp('Loading file')
+
 out = xml2struct([PathName, xmlfile]);
 assignin('base', 'var',out)
 if ~strcmp(out.children(4).children(2).name, 'Sample_Rate')
     error('Check XML file - Sample_Rate not at Correct line')
 end
+
+scalefilename = [PathName, xmlfile(1:end-4),'_scale.mat'];
+scalefile = dir(scalefilename);
+
+if length(scalefile) == 1
+    load(scalefilename) % variable scale is loaded
+    disp('Loading previously saved scaling factors')
+else
+    disp('No previous scaling factors found')
+    scale = zeros(500,2);
+    scale(:,1) = 1;
+end
+
 sampleRate = str2double(out.children(4).children(2).children.data);
 
 numChannels = length([out.children(4).children(8).children.children])+length([out.children(4).children(4).children.children]);
@@ -259,8 +275,8 @@ for trialNum = 8:2:size(out.children,2)-1 % number of trials
     data.(['trial_', num2str(trialNum/2-3)]).speaker_pos=resample(speaker, 1000, sampleRate);
     % data.(['trial_',
     % num2str(trialNum)]).speaker_pos=data_struc.trial(trialNum).data.OSAZ*1.429;
-    data.(['trial_', num2str(trialNum/2-3)]).scaleF = scaleF;
-    data.(['trial_', num2str(trialNum/2-3)]).offsetF = offsetF;
+    data.(['trial_', num2str(trialNum/2-3)]).scaleF = scale(trialNum/2-3,1);
+    data.(['trial_', num2str(trialNum/2-3)]).offsetF = scale(trialNum/2-3,2);
 end
 
 set(mydata.reading,'visible','off');drawnow
@@ -363,10 +379,14 @@ directoryname = uigetdir('', 'Please select the folder to save the Excel analysi
 cd(directoryname)
 allData=get(mydata.MainFigure,'userdata');
 f=allData.trialList;
-filename = [allData.filename(1:end-4),'_',allData.filename(end-2:end),'_Slopes.xls'];
+filename = [allData.filename(1:end-4),'_Slopes.xls'];
+scalefilename = [allData.filename(1:end-4),'_scale.mat'];
 %sheet = 1;% allData.filename(end-2:end);
 % Export to Excel
 xlswrite(filename, { 'Subject'	'Trial#'	'Start angle'	'End angle' 	'Velocity'	'Peak Pursuit'	'Mean Pursuit'	'Weighted Pursuit'	'# Pursuit segments'	'Fraction pursuit' 'Scale Factor' 'Offset'}, 'Sheet1', 'A1')
+
+scale = zeros(length(f),2);
+scale(:,1) = 1;
 
 for i = 1: length(f)
     xlcell = ['A', num2str(i+1), ':L', num2str(i+1)];
@@ -383,14 +403,17 @@ for i = 1: length(f)
         
         weightedMean = abs(sum(dot(meas.pursuitDurations(validSegments),pursuitVelocitiesList))/sum(meas.pursuitDurations(validSegments)));
         
+                scale(i, 1) = allData.data.(trialnumber).scaleF;
+        scale(i, 2) = allData.data.(trialnumber).offsetF;
+        
         % disp({ allData.Subject,	trialnumber,	meas.start_position, 	meas.end_position,	...
         %     meas.ramp_speed,	max(pursuitVelocitiesList), mean(pursuitVelocitiesList)	,weightedMean,...
         %     numSegments,	pursuitfraction, allData.data.(trialnumber).scaleF, allData.data.(trialnumber).offsetF})
         
         xlswrite(filename, { allData.Subject,	trialnumber,	meas.start_position, ...
             meas.end_position,	meas.ramp_speed,	max(pursuitVelocitiesList), mean(pursuitVelocitiesList)	...
-            ,weightedMean,	numSegments,	pursuitfraction, allData.data.(trialnumber).scaleF,...
-            allData.data.(trialnumber).offsetF}, 'Sheet1', xlcell)
+            ,weightedMean,	numSegments,	pursuitfraction, scale(i, 1),...
+            scale(i, 2)}, 'Sheet1', xlcell)
     catch
         disp(['No valid data for ' trialnumber])
         xlswrite(filename, { allData.Subject,	trialnumber, 'No valid segments'},  'Sheet1', ['A', num2str(i+1), ':C', num2str(i+1)])
@@ -491,7 +514,9 @@ for i = 1: length(f)
     
 end
 
+xlswrite(filename, { 'Export Complete'},  'Sheet1', ['A', num2str(i+2), ':A', num2str(i+2)])
 disp([ 'Export finished. Check Excel file ' filename ])
+save(scalefilename, 'scale')
 
 end
 
@@ -565,6 +590,8 @@ try % calculate the trail start positions and velocity
     end
    % assignin('base', 'saccademask', saccademask)
     Gshifts_ind = unique(saccademask);
+    
+    Gshifts_ind = sort([475:525,Gshifts_ind]);
     
     pursuitMovements_ind = 1:length(velocities.veyesAZ);%union(find(abs(velocities.veyesAZ) > PURvelon),...
         %find(abs(accelerations.aeyesAZ) > PURaccon)); % indicies of pursuit
