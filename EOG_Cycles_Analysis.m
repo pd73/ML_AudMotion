@@ -95,13 +95,15 @@ x = round(x);
 spkstart = 0;
 spkend = mean(allData.data.(trialname).speaker_pos(x-250:x+250));
 
-eyesAZ = allData.data.(trialname).eye_pos;
+%eyesAZ = allData.data.(trialname).eye_pos;
+eyesAZ=(allData.data.(trialname).eyesAZ_R+allData.data.(trialname).eyesAZ_L)/2;
+
 eyestart = mean(eyesAZ(x-500:x-250));
 eyeend = mean(eyesAZ(x+250:x+500));
 
 scaleF = (spkend-spkstart)/(eyeend-eyestart);
 
-offsetF = eyeend*scaleF-spkend;
+offsetF = spkend-eyeend*scaleF;
 
 allData.data.(trialname).scaleF = scaleF;
 allData.data.(trialname).offsetF = offsetF ;
@@ -218,7 +220,10 @@ for trialNum = 8:2:size(out.children,2)-1 % number of trials
     eyesEL = filtfilt(B,A,analogdigitaldata(trialstartsample:trialendsample, 7))*100/32768;
     %speaker = filtfilt(B,A,data_struc.trial(trialNum).data.OSAZ*1.429-4.6);
     speaker = filtfilt(B,A,analogdigitaldata(trialstartsample:trialendsample, 3))*100/32768/1.0282;
-    
+    eyesAZ_R = filtfilt(B,A,analogdigitaldata(trialstartsample:trialendsample, 8))*100/32768/3;
+    eyesAZ_L = filtfilt(B,A,analogdigitaldata(trialstartsample:trialendsample, 10))*100/32768/3;
+    eyesEL_R = filtfilt(B,A,analogdigitaldata(trialstartsample:trialendsample, 9))*100/32768/3;
+    eyesEL_L = filtfilt(B,A,analogdigitaldata(trialstartsample:trialendsample, 11))*100/32768/3;
     trialstartsample = trialendsample+1;
   
  
@@ -269,7 +274,14 @@ for trialNum = 8:2:size(out.children,2)-1 % number of trials
     
     data.(['trial_', num2str(trialNum/2-3)]).eye_pos= resample(eyesAZ,1000,sampleRate)  ;
     
+    
     data.(['trial_', num2str(trialNum/2-3)]).eye_posEL= resample(eyesEL,1000,sampleRate)  ;
+    
+        data.(['trial_', num2str(trialNum/2-3)]).eyesAZ_R = eyesAZ_R;
+    data.(['trial_', num2str(trialNum/2-3)]).eyesAZ_L = eyesAZ_L;
+    data.(['trial_', num2str(trialNum/2-3)]).eyesEL_R = eyesEL_R;
+    data.(['trial_', num2str(trialNum/2-3)]).eyesEL_L = eyesEL_L;
+    
     %  data.(['trial_',
     %  num2str(trialNum)]).eye_pos=data_struc.trial(trialNum).data.LEAZ;
     data.(['trial_', num2str(trialNum/2-3)]).speaker_pos=resample(speaker, 1000, sampleRate);
@@ -524,8 +536,9 @@ function [m]= MeasureTrial(mydata,trialname, scaleF, offsetF)
 allData=get(mydata.MainFigure,'userdata');
 
 %horizontal
-positions.eyesAZ=allData.data.(trialname).eye_pos*scaleF-offsetF;
-positions.eyesEL=allData.data.(trialname).eye_posEL;
+%positions.eyesAZ=allData.data.(trialname).eye_pos*scaleF-offsetF;
+positions.eyesAZ=(allData.data.(trialname).eyesAZ_R+allData.data.(trialname).eyesAZ_L)/2*scaleF+offsetF;
+positions.eyesEL=(allData.data.(trialname).eyesEL_R+allData.data.(trialname).eyesEL_L)/2;
 positions.speakerAZ=allData.data.(trialname).speaker_pos;
 
 [velocities, ~]= calcva(positions,1);
@@ -593,7 +606,7 @@ try % calculate the trail start positions and velocity
     
     Gshifts_ind = sort([475:525,Gshifts_ind]);
     
-    pursuitMovements_ind = 1:length(velocities.veyesAZ);%union(find(abs(velocities.veyesAZ) > PURvelon),...
+    pursuitMovements_ind = 1:length(positions.eyesAZ);%union(find(abs(velocities.veyesAZ) > PURvelon),...
         %find(abs(accelerations.aeyesAZ) > PURaccon)); % indicies of pursuit
     
     pursuitMovements_ind = setxor(pursuitMovements_ind,Gshifts_ind); %cleans up
@@ -603,7 +616,7 @@ try % calculate the trail start positions and velocity
     
     Gshifts=find(diff(Gshifts_ind)>2);% reduced this number from 20, allows shorter saccades to be counted
     
-    pursuitMovements= find(diff(pursuitMovements_ind)>2); % reduced this number from 20, allows shorter smooth to be counted
+    pursuitMovements = find(diff(pursuitMovements_ind)>2); % reduced this number from 20, allows shorter smooth to be counted
     
     numGshifts=length(Gshifts)+1;
     
@@ -658,9 +671,9 @@ try % calculate the trail start positions and velocity
         m.pursuitMovements_ind=pursuitMovements_ind;
         pursuitMovements_start=zeros(1,numPursuitMovements);
         pursuitMovements_end=zeros(1,numPursuitMovements);
-        pursuitMovements_start(1)=pursuitMovements_ind(1);
+        pursuitMovements_start(1)=1;%pursuitMovements_ind(1);
         if ~isempty(pursuitMovements)
-            pursuitMovements_end(1)= pursuitMovements_ind(pursuitMovements(1));
+            pursuitMovements_end(1)= pursuitMovements_ind(pursuitMovements(1)+1);
         else
             pursuitMovements_end(1)=pursuitMovements_ind(end);
         end
@@ -689,18 +702,18 @@ try % calculate the trail start positions and velocity
         m.pursuitDurations=pursuitMovements_end-pursuitMovements_start;
         m.pursuitAmplitudes= round(positions.eyesAZ(pursuitMovements_end)-positions.eyesAZ(pursuitMovements_start));
         
-        for i = 1:length(m.pursuitDurations)
-            if m.pursuitDurations(1) > 50
-                m.PursuitStart = pursuitMovements_start(1)-20;
-                break;
-            end
-        end
+%         for i = 1:length(m.pursuitDurations)
+%             if m.pursuitDurations(1) > 50
+%                 m.PursuitStart = pursuitMovements_start(1)-20;
+%                 break;
+%             end
+%         end
         
         
     end
     
 catch
-    disp('Trace too disordered to calculate movement parameters')
+    disp('Problem calculating all movement parameters - this may affect analysis and plots')
 end
 
 end
@@ -741,19 +754,26 @@ whitebg('k')
 subplot(3,1,1) % top plot, the raw record
 
 hold off
-plot(allData.data.(trialname).eye_pos*scaleF-offsetF,'g')
+% plot(allData.data.(trialname).eye_pos*scaleF-offsetF,'g')
+% hold on
+
+plot(scaleF*allData.data.(trialname).eyesAZ_R+offsetF,'g')
 hold on
+plot(scaleF*allData.data.(trialname).eyesAZ_L+offsetF,'g:')
+plot(scaleF*(allData.data.(trialname).eyesAZ_L+allData.data.(trialname).eyesAZ_R)/2+offsetF, 'w')
+
+
 plot(allData.data.(trialname).speaker_pos,'m')
 plot([0,length(allData.data.(trialname).speaker_pos)], [0 0] , 'r')
-plot([0,length(allData.data.(trialname).speaker_pos)], [4 4] , 'r:')
-plot([0,length(allData.data.(trialname).speaker_pos)], [-4 -4] , 'r:')
-title('Arm motion and EOG for full record')
+%plot([0,length(allData.data.(trialname).speaker_pos)], [4 4] , 'r:')
+%plot([0,length(allData.data.(trialname).speaker_pos)], [-4 -4] , 'r:')
+title({'Arm motion and Eye signal for full record', 'Purple = Speaker, Solid Green = R eye, Dashed Green = L eye, White = Gaze, Red = 0'})
 
 % Second plot with the eye EL channel for blinks and sleep
 subplot(3,1,2)
 hold off
 plot(positions.eyesEL*scaleF,'g')
-title('EOG elevation channel during movement period')
+title('Average Eye elevation motion during the movement period')
 hold on
 
 % Main movement plot with the smooth pursuit and the saccades
@@ -761,7 +781,7 @@ subplot(3,1,3)
 
 hold off
 plot(positions.eyesAZ,'g')
-title('Smooth pursuit and saccades extracted')
+title({'Smooth pursuit with saccades extracted', 'Purple = Speaker, Green = Gaze/Eyes, Red = Saccades, Blue = Desaccaded pursuit'})
 hold on
 plot(positions.speakerAZ,'m')
 
@@ -783,8 +803,17 @@ try % mark saccades in red
             PursuitMotion = [PursuitMotion, segment'];
             % desaccade
             % get smooth segments before and after the saccade
+            if meas.pursuitMovements_end(i-shortSeg)-100 < 1
+                prevSmooth = positions.eyesAZ(1:meas.pursuitMovements_end(i-shortSeg));
+            else            
             prevSmooth = positions.eyesAZ(meas.pursuitMovements_end(i-shortSeg)-100:meas.pursuitMovements_end(i-shortSeg));
+            end
+            if meas.pursuitMovements_start(i+1-shortSeg)+100 > length(positions.eyesAZ)
+                 nextSmooth = positions.eyesAZ(meas.pursuitMovements_start(i+1-shortSeg):end);
+           
+            else
             nextSmooth = positions.eyesAZ(meas.pursuitMovements_start(i+1-shortSeg):(meas.pursuitMovements_start(i+1-shortSeg)+100));
+            end
             
             % calculate their slopes and take average
             fit1 = polyfit(1:length(prevSmooth), prevSmooth',1);
@@ -801,13 +830,13 @@ try % mark saccades in red
     else
         plot(positions.eyesAZ,'linewidth',2.5,'color','b')%% Plot whole trace because no saccades
     end
-    assignin('base','PursuitMotion',PursuitMotion)
-    assignin('base','start_time', meas.start_time)
+    assignin('base','positions',positions)
+    assignin('base','meas', meas)
 catch
     disp(i)
     disp(meas.numGshifts)
-    assignin('base','PursuitMotion',PursuitMotion)
-    assignin('base','start_time', meas.start_time)
+    assignin('base','positions',positions)
+    assignin('base','meas', meas)
     disp('error Tried and failed to plot smooth pursuit')
 end
 
