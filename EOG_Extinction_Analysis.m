@@ -27,6 +27,7 @@ function EOG_Extinction_Analysis()
 % the look up trial for extinction time it now uses the Excel Trial number
 % and this is printed in the titel of the top figure
 % Update 7/15/2014 Export desaccaded extinction traces
+% Update 1/28/2015 Use new share drive 'smdnas'
 
 mydata.MainFigure = figure('name', 'Data Viewer', 'numbertitle', 'off', 'menubar', 'none');
 
@@ -129,7 +130,7 @@ choice = questdlg('What type of session will you be loading?', ...
 
 set(mydata.reading,'visible','on');drawnow
 
-cd '\\delphi\Paige-Lab\Paige Lab\Labs\A-Lab\Experiments\GSM';
+cd '\\smdnas\Paige-Lab\Paige Lab\Labs\A-Lab\Experiments\GSM';
 [xmlfile,PathName] = uigetfile('*hedr.xml','Select the S-Lab output file');
 
 set(gcf, 'name', xmlfile)
