@@ -2,9 +2,9 @@ function SLab_Movement()
 %% Function to extract smooth pursuit movement data from S-Lab data files
 %
 % Based on previously developed code written by Paul Allen in 2014 and 2015
-% This program will stand alone and be able to read all of the S-Lab Movement 
+% This program will stand alone and be able to read all of the S-Lab Movement
 % Experiment Data types and provide a uniform analysis of all the data
-% 
+%
 %% Launch the function
 mydata.MainFigure = figure('name', 'Data Viewer', 'numbertitle', 'off', 'menubar', 'none');
 
@@ -39,6 +39,26 @@ plotThis=allData.currentPlot;
 f=allData.trialList;
 trialname=f{plotThis}{1};
 allData.data.(trialname).saccThresh = str2double(thresh);
+set(mydata.MainFigure,'userdata',allData);
+end
+
+function startWin(cbo,~,mydata)
+startWin = get(cbo,'String');
+allData=get(mydata.MainFigure,'userdata');
+plotThis=allData.currentPlot;
+f=allData.trialList;
+trialname=f{plotThis}{1};
+allData.data.(trialname).startWin = str2double(startWin);
+set(mydata.MainFigure,'userdata',allData);
+end
+
+function endWin(cbo,~,mydata)
+endWin = get(cbo,'String');
+allData=get(mydata.MainFigure,'userdata');
+plotThis=allData.currentPlot;
+f=allData.trialList;
+trialname=f{plotThis}{1};
+allData.data.(trialname).endWin = str2double(endWin);
 set(mydata.MainFigure,'userdata',allData);
 end
 
@@ -121,136 +141,155 @@ assignin('base', 'xmlfile',xmlfile)
 set(mydata.reading,'visible','on');drawnow
 disp('Loading file')
 
-out = xml2struct([PathName, xmlfile]);
-% NB use the the xml2struct function of Falkena, Wanner, Smirnov & Mo
+datafilename = [PathName, xmlfile(1:end-4),'_allData.mat'];
+datafile = dir(datafilename);
 
-assignin('base', 'out',out)
-
-scalefilename = [PathName, xmlfile(1:end-4),'_scale.mat'];
-scalefile = dir(scalefilename);
-
-if length(scalefile) == 1
-    load(scalefilename) % variable scale is loaded
-    disp('Loading previously saved scaling factors')
+if length(datafile) == 1
+    load(datafilename) % variable scale is loaded
+    disp('Found previously saved session')
+    disp(['Loading file ' xmlfile])
+    assignin('base', 'allData',allData)
 else
-    disp('No previous scaling factors found')
+    disp('No previous session found')
+    disp(['Loading file ' xmlfile])
     scale = zeros(500,2);
     scale(:,1) = 1;
-    scale(:,3) = 30;
-end
-
-numAnalogChans = length(out.GXML_Root.Device_Config.Analog_Names.String);
-numDigitalChans = length(out.GXML_Root.Device_Config.Digital_Names.String);
-numChannels = numAnalogChans+numDigitalChans;
-
-binFile = [PathName, xmlfile(1:end-8), 'smpl'];
-
-fid = fopen(binFile,'r','b');
-analogdigitaldata = fread(fid, [numChannels,inf], 'int16')';
-fclose(fid);
-
-[B,A] = butter(12,0.1,'low');
-
-% varName = cell(length(out.GXML_Root.Variable_Definitions.Variable_Definition),2);
-% 
-% for i = 1:length(varName)
-%     varName{i,2} = out.GXML_Root.Variable_Definitions.Variable_Definition{1, i}.Attributes.mems;
-%     varName{i,1} = out.GXML_Root.Variable_Definitions.Variable_Definition{1, i}.Var_Name.Text;
-% end
-
-inneroffset = -0.7109;% varName{find(strcmp('Inr_Offset',varName)),2}/100;
-
-totalNumTrials = length(out.GXML_Root.Excel_Cluster);
- Excelinfo = zeros(totalNumTrials, 7);
- trialstartsample = 1;
-for trialNum = 1:totalNumTrials % number of trials
- 
-    Excelinfo(trialNum,:) = [...
-        trialNum,... % Trial Number
-        str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.LV_Trial.Text),... %LV trial number
-        str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Sample_Count.Text),... % Number of samples
-        str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Event_Count.Text),... % Number of events
-        str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Pre_Inr_P2.Text),... % where the speaker was at the start of the trial for calibration
-        str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Inr_Mov_P.Text),... % Where the inner speaker heads to
-        str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Inr_Mov_V.Text)... % how fast it went
-        ];
+    scale(:,3) = 0;
+    scale(:,4) = 0;
+    scale(:,5) = 0;
     
-%     if trialendsample-trialstartsample < 1000
-%         warning('Something wierd with a short duration trial');
-%         disp(trialNum);
-%         continue
-%     end
-
-    trialendsample = str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Sample_Count.Text);
+    out = xml2struct([PathName, xmlfile]);
+    % NB use the the xml2struct function of Falkena, Wanner, Smirnov & Mo
     
-    speaker = filtfilt(B,A,analogdigitaldata(trialstartsample:trialendsample, 3))*100/32768/1.02286 +inneroffset;
-    eyesAZ_R = filtfilt(B,A,analogdigitaldata(trialstartsample:trialendsample, 8))*100/32768/3;
-    eyesAZ_L = filtfilt(B,A,analogdigitaldata(trialstartsample:trialendsample, 10))*100/32768/3;
-    eyesEL_R = filtfilt(B,A,analogdigitaldata(trialstartsample:trialendsample, 9))*100/32768/3;
-    eyesEL_L = filtfilt(B,A,analogdigitaldata(trialstartsample:trialendsample, 11))*100/32768/3;
+    assignin('base', 'out',out)
     
-    Head_Yaw = filtfilt(B,A,analogdigitaldata(trialstartsample:trialendsample, 14))*0.01;
-    Head_Pitch = filtfilt(B,A,analogdigitaldata(trialstartsample:trialendsample, 15))*0.01;
-    Head_Roll = filtfilt(B,A,analogdigitaldata(trialstartsample:trialendsample, 16))*0.01;
+    numAnalogChans = length(out.GXML_Root.Device_Config.Analog_Names.String);
+    numDigitalChans = length(out.GXML_Root.Device_Config.Digital_Names.String);
+    numChannels = numAnalogChans+numDigitalChans;
     
-    if (max(Head_Yaw) - min(Head_Yaw) > 100)
-        Head_Yaw = zeros(length(Head_Yaw),1);
+    binFile = [PathName, xmlfile(1:end-8), 'smpl'];
+    
+    fid = fopen(binFile,'r','b');
+    analogdigitaldata = fread(fid, [numChannels,inf], 'int16')';
+    fclose(fid);
+    
+    [B,A] = butter(12,0.1,'low');
+    
+    inneroffset = -0.7109;% varName{find(strcmp('Inr_Offset',varName)),2}/100;
+    
+    totalNumTrials = length(out.GXML_Root.Excel_Cluster);
+    Excelinfo = zeros(totalNumTrials, 7);
+    trialstartsample = 1;
+    for trialNum = 1:totalNumTrials % number of trials
+        
+        Excelinfo(trialNum,:) = [...
+            str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.LV_Trial.Text),... %LV trial number
+            str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Trial_Index.Text),... %LV trial number
+            str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Sample_Count.Text),... % Number of samples
+            str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Event_Count.Text),... % Number of events
+            str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Pre_Inr_P2.Text),... % where the speaker was at the start of the trial for calibration
+            str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Inr_Mov_P.Text),... % Where the inner speaker heads to
+            str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Inr_Mov_V.Text)... % how fast it went
+            ];
+        
+        trialendsample = str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Sample_Count.Text);
+        Inner_Az_index = 3;
+        
+        if numAnalogChans == 7
+            eyesAZ_R_index = 6;% this is spoofed due to EOG
+            eyesAZ_L_index = 6;
+            eyesEL_R = 5;
+            eyesEL_L = 5; % this is spoofed due to EOG
+            
+            Head_Yaw = zeros(trialendsample-trialstartsample+1,1);
+            Head_Pitch = zeros(trialendsample-trialstartsample+1,1);
+            Head_Roll = zeros(trialendsample-trialstartsample+1,1);
+            
+        else
+            eyesAZ_R_index = 8;
+            eyesAZ_L_index = 10;
+            eyesEL_R = 9;
+            eyesEL_L = 11;
+            
+            Head_Yaw = filtfilt(B,A,analogdigitaldata(trialstartsample:trialendsample, 14))*0.01;
+            Head_Pitch = filtfilt(B,A,analogdigitaldata(trialstartsample:trialendsample, 15))*0.01;
+            Head_Roll = filtfilt(B,A,analogdigitaldata(trialstartsample:trialendsample, 16))*0.01;
+            
+        end
+        
+        
+        speaker = filtfilt(B,A,analogdigitaldata(trialstartsample:trialendsample, Inner_Az_index))*100/32768/1.02286 +inneroffset;
+        eyesAZ_R = filtfilt(B,A,analogdigitaldata(trialstartsample:trialendsample, eyesAZ_R_index))*100/32768/3;
+        eyesAZ_L = filtfilt(B,A,analogdigitaldata(trialstartsample:trialendsample, eyesAZ_L_index))*100/32768/3;
+        eyesEL_R = filtfilt(B,A,analogdigitaldata(trialstartsample:trialendsample, eyesEL_R))*100/32768/3;
+        eyesEL_L = filtfilt(B,A,analogdigitaldata(trialstartsample:trialendsample, eyesEL_L))*100/32768/3;
+        
+        
+        
+        
+        if (max(Head_Yaw) - min(Head_Yaw) > 100)
+            Head_Yaw = zeros(length(Head_Yaw),1);
+        end
+        
+        trialstartsample = trialendsample+1;
+        
+        data.(['trial_', num2str(trialNum)]).speaker = speaker;
+        
+        data.(['trial_', num2str(trialNum)]).eyesAZ_R = eyesAZ_R;
+        data.(['trial_', num2str(trialNum)]).eyesAZ_L = eyesAZ_L;
+        data.(['trial_', num2str(trialNum)]).eyesEL_R = eyesEL_R;
+        data.(['trial_', num2str(trialNum)]).eyesEL_L = eyesEL_L;
+        
+        data.(['trial_', num2str(trialNum)]).Head_Yaw = Head_Yaw;
+        data.(['trial_', num2str(trialNum)]).Head_Pitch = Head_Pitch;
+        data.(['trial_', num2str(trialNum)]).Head_Roll = Head_Roll;
+        
+        data.(['trial_', num2str(trialNum)]).scaleF = scale(trialNum,1);
+        data.(['trial_', num2str(trialNum)]).offsetF = scale(trialNum,2);
+        data.(['trial_', num2str(trialNum)]).saccThresh = scale(trialNum,3);
+        data.(['trial_', num2str(trialNum)]).startWin = scale(trialNum,4);
+        data.(['trial_', num2str(trialNum)]).endWin = scale(trialNum,5);
     end
     
-    trialstartsample = trialendsample+1;
+    iOne = ['trial_',num2str(find(Excelinfo(:,2) == 1, 1, 'last' ))];
+    iTwo = ['trial_',num2str(find(Excelinfo(:,2) == 2, 1, 'last' ))];
+    iThree = ['trial_',num2str(find(Excelinfo(:,2) == 3, 1, 'last' ))];
+    iFour = ['trial_',num2str(find(Excelinfo(:,2) == 4, 1, 'last' ))];
+    iFive = ['trial_',num2str(find(Excelinfo(:,2) == 5, 1, 'last' ))];
     
-    data.(['trial_', num2str(trialNum)]).speaker = speaker;
-    
-    data.(['trial_', num2str(trialNum)]).eyesAZ_R = eyesAZ_R;
-    data.(['trial_', num2str(trialNum)]).eyesAZ_L = eyesAZ_L;
-    data.(['trial_', num2str(trialNum)]).eyesEL_R = eyesEL_R;
-    data.(['trial_', num2str(trialNum)]).eyesEL_L = eyesEL_L;
-    
-    data.(['trial_', num2str(trialNum)]).Head_Yaw = Head_Yaw;
-    data.(['trial_', num2str(trialNum)]).Head_Pitch = Head_Pitch;
-    data.(['trial_', num2str(trialNum)]).Head_Roll = Head_Roll;
-    
-    data.(['trial_', num2str(trialNum)]).scaleF = scale(trialNum,1);
-    data.(['trial_', num2str(trialNum)]).offsetF = scale(trialNum,2);
-    data.(['trial_', num2str(trialNum)]).saccThresh = scale(trialNum,3);
-end
-
-iOne = ['trial_',num2str(find(Excelinfo(:,2) == 1, 1, 'last' ))];
-iTwo = ['trial_',num2str(find(Excelinfo(:,2) == 2, 1, 'last' ))];
-iThree = ['trial_',num2str(find(Excelinfo(:,2) == 3, 1, 'last' ))];
-iFour = ['trial_',num2str(find(Excelinfo(:,2) == 4, 1, 'last' ))];
-iFive = ['trial_',num2str(find(Excelinfo(:,2) == 5, 1, 'last' ))];
-
-if isempty(strfind(xmlfile , 'Free'))
-    data.scaleAZ = 0;
-    data.offsetAZ = 0;
-    data.scaleEL = 0;
-    data.offsetEL = 0;
-else
-    try
-    data.scaleAZ = 40/(mean(data.(iThree).Head_Yaw(end-1000:end))-mean(data.(iOne).Head_Yaw(end-1000:end)));
-    data.offsetAZ = -mean(data.(iTwo).Head_Yaw(end-1000:end))*data.scaleAZ;
-    data.scaleEL = 20/(mean(data.(iFour).Head_Pitch(end-1000:end))-mean(data.(iFive).Head_Pitch(end-1000:end)));
-    data.offsetEL = -mean(data.(iTwo).Head_Pitch(end-1000:end))*data.scaleEL;
-    catch
-        disp('Improper presentation design - unscaled head movements')
+    if isempty(strfind(xmlfile , 'Free'))
+        data.scaleAZ = 0;
+        data.offsetAZ = 0;
+        data.scaleEL = 0;
+        data.offsetEL = 0;
+    else
+        try
+            data.scaleAZ = 40/(mean(data.(iThree).Head_Yaw(end-1000:end))-mean(data.(iOne).Head_Yaw(end-1000:end)));
+            data.offsetAZ = -mean(data.(iTwo).Head_Yaw(end-1000:end))*data.scaleAZ;
+            data.scaleEL = 20/(mean(data.(iFour).Head_Pitch(end-1000:end))-mean(data.(iFive).Head_Pitch(end-1000:end)));
+            data.offsetEL = -mean(data.(iTwo).Head_Pitch(end-1000:end))*data.scaleEL;
+        catch
+            disp('Improper presentation design - unscaled head movements')
             data.scaleAZ = 1;
-    data.offsetAZ = 0;
-    data.scaleEL = 1;
-    data.offsetEL = 0;
+            data.offsetAZ = 0;
+            data.scaleEL = 1;
+            data.offsetEL = 0;
+        end
     end
-end
     
-
-set(mydata.reading,'visible','off');drawnow
-assignin('base', 'Excelinfo',Excelinfo)
-allData=get(mydata.MainFigure,'userdata');
-allData.Excelinfo = Excelinfo;
-allData.data=data;
-allData.Subject = xmlfile(1:6);
-allData.filename = xmlfile;
-allData.currentPlot=6;
-allData.num_trials=num2cell(1:trialNum/2-3);
+    
+    set(mydata.reading,'visible','off');drawnow
+    assignin('base', 'Excelinfo',Excelinfo)
+    allData=get(mydata.MainFigure,'userdata');
+    allData.Excelinfo = Excelinfo;
+    allData.data=data;
+    allData.Subject = xmlfile(1:6);
+    allData.filename = xmlfile;
+    allData.PathName = PathName;
+    allData.currentPlot=6;
+    allData.num_trials=num2cell(1:trialNum/2-3);
+    
+end
 set(mydata.MainFigure,'userdata',allData);
 SelectTrials([],[],mydata)
 set(gcf, 'units','normalized','outerposition',[0 0 1 1]);
@@ -291,15 +330,31 @@ allData.num_trials=length(trialList);
 %     'callback',{@flagthistrace mydata});
 
 mydata.removethis=uicontrol(mydata.MainFigure,'style','push','string',...
-    'Remove Trial','position',[10,150,120,20],...
+    'Remove Trial','position',[10,150,100,20],...
     'TooltipString','Removes the current trial from ths list',...
     'callback',{@RemoveTrial mydata});
+
+mydata.Export=uicontrol('style','push','string','Save Session',...
+    'TooltipString','Save the current session to MAT file',...
+    'position',[15 80 100 20],'callback', {@SaveSession mydata});
 
 mydata.Export=uicontrol('style','push','string','Export Data',...
     'TooltipString','Export the smooth and saccade segments',...
     'position',[15 50 100 20],'callback', {@Export mydata});
 
 set(mydata.MainFigure,'userdata',allData);
+
+mydata.startWin= uicontrol(mydata.MainFigure,'Style','edit',...
+    'Position', [10,680,50,20], 'Callback', {@startWin mydata});
+
+mydata.startWinlabel = uicontrol(mydata.MainFigure,'Style','text', ...
+    'Position', [70,680,80,20], 'String', 'Start of Window');
+
+mydata.endWin= uicontrol(mydata.MainFigure,'Style','edit',...
+    'Position', [10,650,50,20], 'Callback', {@endWin mydata});
+
+mydata.endWinlabel = uicontrol(mydata.MainFigure,'Style','text', ...
+    'Position', [70,650,80,20], 'String', 'End of Window');
 
 mydata.saccThresh= uicontrol(mydata.MainFigure,'Style','edit',...
     'Position', [10,620,50,20], 'Callback', {@Rethresh mydata});
@@ -328,11 +383,16 @@ mydata.copyGainOffset= uicontrol(mydata.MainFigure,'Style','pushbutton',...
 mydata.listbox = uicontrol('Style', 'listbox',...
     'Position', [10,200,120,320], 'Callback', {@ListCallback mydata});
 
-
 set(mydata.listbox,'string',[trialkeyList{1:end}],...
     'Callback', {@ListCallback mydata},'visible','on');
 PlotTrial([],[],mydata)
 
+end
+
+function SaveSession(~,~,mydata)
+allData=get(mydata.MainFigure,'userdata');
+datafilename = [allData.PathName, allData.filename(1:end-4),'_allData.mat'];
+save(datafilename, 'allData')
 end
 
 function Export(~,~,mydata)
@@ -342,8 +402,8 @@ cd(directoryname)
 allData=get(mydata.MainFigure,'userdata');
 f=allData.trialList;
 filename = [allData.filename(1:end-4),'_Slopes.xls'];
-scalefilename = [allData.filename(1:end-4),'_scale.mat'];
-
+datafilename = [allData.filename(1:end-4),'_allData.mat'];
+save(datafilename, 'allData')
 % Export to Excel
 xlswrite(filename, { 'Subject'	'LVTrial#'  'XLTrial'	'Start angle'	'End angle' 	'Velocity'	'Peak Gaze Pursuit'	'Mean Gaze Pursuit'	'Weighted Gaze Pursuit'	'# Pursuit segments'	'Fraction pursuit > 250ms'  'Fraction all pursuit' 'Head Start' 'Gaze Start' 'Scale Factor' 'Offset'}, 'Sheet1', 'A1')
 xlswrite(filename, { 'Subject'	'LVTrial#'  'XLTrial'	'Segment Start'  'Segment End'  'Segment Velocity' 	'Pursuit Segments > 250 ms'	}, 'Sheet2', 'A1')
@@ -512,32 +572,33 @@ positions.eyesAZ=(allData.data.(trialname).eyesAZ_R+allData.data.(trialname).eye
 positions.eyesEL=allData.data.(trialname).eyesEL_R;
 positions.speakerAZ=allData.data.(trialname).speaker;
 positions.headYAW=allData.data.(trialname).Head_Yaw*scaleAZ+offsetAZ;
+
 positions.gaze = positions.eyesAZ + positions.headYAW;
 %    if (max(positions.headYAW) - min(positions.headYAW) > 100)
-        positions.headYAW = positions.headYAW*0;
- %   end
+positions.headYAW = positions.headYAW*0;
+%   end
 velocities= calcva(positions,20);
-   
+
 try % calculate the trail start and end positions
-     m.start_position = round(mean(positions.speakerAZ(200:300)));
-     m.end_position = round(mean(positions.speakerAZ(end-300:end)));
-%     
+    m.start_position = round(mean(positions.speakerAZ(200:300)));
+    m.end_position = round(mean(positions.speakerAZ(end-300:end)));
+    %
     % Determine when the speaker starts moving by a linear fit to 80% of
     % the motion
-   % ramptrail = (positions.speakerAZ'-m.start_position)*sign(m.end_position-m.start_position);
-   ramptrail = abs(velocities.speakerAZ);
-%     x1 = find(ramptrail > 0.25*max(ramptrail),1);
-%     x2 = find(ramptrail > 0.75*max(ramptrail),1);
-%     X = ramptrail(x1:x2);
-%     Y = x1:x2;
+    % ramptrail = (positions.speakerAZ'-m.start_position)*sign(m.end_position-m.start_position);
+    ramptrail = abs(velocities.speakerAZ);
+    %     x1 = find(ramptrail > 0.25*max(ramptrail),1);
+    %     x2 = find(ramptrail > 0.75*max(ramptrail),1);
+    %     X = ramptrail(x1:x2);
+    %     Y = x1:x2;
     start_time = find(ramptrail> 0.2*max(ramptrail),1);%floor(roots(polyfit(X,Y,1))+x1);
     end_time = length(positions.speakerAZ);
     
-
+    
     % Determine when the head starts moving by a linear fit to 80% of
-    % the motion  
-  %  headstartpos = round(mean(positions.headYAW(start_time-500:start_time)));
-   % headpath = (positions.headYAW(start_time-500:end)'-headstartpos)*sign(m.end_position-m.start_position);
+    % the motion
+    %  headstartpos = round(mean(positions.headYAW(start_time-500:start_time)));
+    % headpath = (positions.headYAW(start_time-500:end)'-headstartpos)*sign(m.end_position-m.start_position);
     %assignin('base','headpath', headpath)
     %     x1 = find(headpath > 0.1*max(headpath),1);
     %     x2 = find(headpath > 0.9*max(headpath),1);
@@ -546,11 +607,11 @@ try % calculate the trail start and end positions
     %     start_head =floor(roots(polyfit(X,Y,1))+x1);
     headtrail = abs(velocities.headYAW(start_time-500:end));
     start_head = find(headtrail > 0.2*max(headtrail),1);
- 
+    
     % Find the start of the head movement by interpolating back from the
     % midpoint of the start of the movement
-%     gazestartpos = round(mean(positions.gaze(start_time-500:start_time)));
-%     gazepath = (positions.gaze(start_time-500:end_time)'-gazestartpos)*sign(m.end_position-m.start_position);
+    %     gazestartpos = round(mean(positions.gaze(start_time-500:start_time)));
+    %     gazepath = (positions.gaze(start_time-500:end_time)'-gazestartpos)*sign(m.end_position-m.start_position);
     %assignin('base','gazepath', gazepath)
     %     x1 = find(gazepath > 0.25*max(gazepath),1);
     %     x2 = find(gazepath > 0.75*max(gazepath),1);
@@ -561,7 +622,7 @@ try % calculate the trail start and end positions
     start_gaze =find(gazetrail > 20,1);
     
     
- 
+    
     rampVels = abs(velocities.speakerAZ(start_time:end_time));
     m.ramp_speed = round(mean(rampVels(rampVels>0.8*max(rampVels)))/5)*5;
     
@@ -582,7 +643,25 @@ try % calculate the trail start and end positions
         startplot = 1;
         endplot = length(positions.speakerAZ);
     end
- 
+    
+    startWin = allData.data.(trialname).startWin;
+    if startWin == 0
+        set(mydata.startWin,'string',num2str(startplot));
+        allData.data.(trialname).startWin = startplot;
+        set(mydata.MainFigure,'userdata',allData);
+    else
+        startplot = startWin;
+    end
+    
+    endWin = allData.data.(trialname).endWin;
+    if endWin == 0
+        set(mydata.endWin,'string',num2str(endplot));
+        allData.data.(trialname).endWin = endplot;
+        set(mydata.MainFigure,'userdata',allData);
+    else
+        endplot = endWin;
+    end
+    
     %horizontal
     positions.eyesAZ=positions.eyesAZ(startplot:endplot); %eye posiitons
     positions.eyesEL=positions.eyesEL(startplot:endplot);
@@ -594,29 +673,49 @@ try % calculate the trail start and end positions
     velocities = calcva(positions,20);
     
     smoothvels = calcva(positions,500);
-  % accelerations = velocities;
+    % accelerations = velocities;
     
     %figure;plot(accelerations.gaze);figure;
-  %  eyesAZvelon = 15; % saccades if faster then 50
-  thisThresh = allData.data.(trialname).saccThresh/100;
-     eyesAZvelon = thisThresh*max(abs(velocities.gaze-smoothvels.gaze));
-  %  eyesAZaccon = 120;
-    Gshifts_ind = find(abs(velocities.gaze-smoothvels.gaze) > eyesAZvelon);
-   % Gshifts_ind= union(find(abs(velocities.gaze) > eyesAZvelon);%,...
-     %   find(abs(accelerations.gaze) > eyesAZaccon)); %indicies of saccades
+    %  eyesAZvelon = 15; % saccades if faster then 50
+    thisThresh = allData.data.(trialname).saccThresh/100;
+    if thisThresh == 0
+        thisThresh =  3*std(abs(velocities.gaze-smoothvels.gaze))/max(abs(velocities.gaze-smoothvels.gaze));
+        set(mydata.saccThresh,'string',num2str(thisThresh*100));
+        
+        allData.data.(trialname).saccThresh = thisThresh*100;
+        set(mydata.MainFigure,'userdata',allData);
+    end
     
-    % adds a 'saccade' where the start of the speaker movement occurs
-    Gshifts_ind = unique([475:525,Gshifts_ind]);
+    eyesAZvelon = thisThresh*max(abs(velocities.gaze-smoothvels.gaze));
+    %  eyesAZaccon = 120;
+    Gshifts_ind = find(abs(velocities.gaze-smoothvels.gaze) > eyesAZvelon);
+    % Gshifts_ind= union(find(abs(velocities.gaze) > eyesAZvelon);%,...
+    %   find(abs(accelerations.gaze) > eyesAZaccon)); %indicies of saccades
+    skirtwidth = 20;
+    Gshifts_withSkirt = [];
+    for index = Gshifts_ind
+        Gshifts_withSkirt = [ Gshifts_withSkirt, [index - skirtwidth: index + skirtwidth]];
+    end
+    Gshifts_withSkirt(Gshifts_withSkirt < 1) = 500;
+    Gshifts_withSkirt(Gshifts_withSkirt > numSamples) = 500;
+    
+        % adds a 'saccade' where the start of the speaker movement occurs
+    Gshifts_ind = unique([475:525,Gshifts_withSkirt]);
     
     % anything not saccade is pursuit
     pursuitMovements_ind = setxor(1:length(positions.eyesAZ),Gshifts_ind);
     
     %eliminate movements before 100ms
-    pursuitMovements_ind=pursuitMovements_ind(pursuitMovements_ind>100);
+    % pursuitMovements_ind=pursuitMovements_ind(pursuitMovements_ind>100);
     
     Gshifts=find(diff(Gshifts_ind)>20);
     numGshifts=length(Gshifts)+1;
-    numPursuitMovements = numGshifts+1 ;
+    
+    if pursuitMovements_ind(end) == numSamples
+        numPursuitMovements = numGshifts+1;
+    else
+        numPursuitMovements = numGshifts;
+    end
     
     if ~isempty(Gshifts_ind)
         Gshifts_start=zeros(1,numGshifts);
@@ -625,7 +724,7 @@ try % calculate the trail start and end positions
         pursuitMovements_end=zeros(1,numGshifts+1);
         
         Gshifts_start(1)=Gshifts_ind(1);
-        pursuitMovements_start(1) = 100;
+        pursuitMovements_start(1) = 1;
         pursuitMovements_end(1) = Gshifts_start(1)-1;
         
         if numGshifts == 1
@@ -674,7 +773,7 @@ try % calculate the trail start and end positions
     m.positions=positions;
     m.velocities=velocities;
     m.smoothvels=smoothvels;
-   % m.accelerations=accelerations;
+    % m.accelerations=accelerations;
     
     m.TargetStart = start_time-startplot; % ie always at 500ms
     m.HeadStart = start_head; % 500 is the buffer for plotting before the start of the motion
@@ -717,22 +816,28 @@ set(mydata.listbox,'string',[allData.trialList{1:end}],'value',plotThis);
 
 scaleAZ = allData.data.scaleAZ;
 offsetAZ = allData.data.offsetAZ;
-scaleEL = allData.data.scaleEL;
-offsetEL = allData.data.offsetEL;
+% scaleEL = allData.data.scaleEL;
+% offsetEL = allData.data.offsetEL;
 
 scaleF = allData.data.(trialname).scaleF;
 offsetF = allData.data.(trialname).offsetF;
-saccThresh = allData.data.(trialname).saccThresh;
-
-set(mydata.offsetFactdisp,'string',num2str(offsetF));
-set(mydata.scaleFactdisp,'string',num2str(scaleF));
-set(mydata.saccThresh,'string',num2str(saccThresh));
 
 meas=MeasureTrial(mydata,trialname, scaleF, offsetF);
-assignin('base','MeasuresTrial',meas);
+assignin('base','meas',meas);
+allData=get(mydata.MainFigure,'userdata');
+%allData.data.(trialname).startWin
+startWin = allData.data.(trialname).startWin;
+endWin = allData.data.(trialname).endWin;
+
+% str2double(get(mydata.endWin,'string'));
+% startWin = str2double(get(mydata.startWin,'string'));
+ set(mydata.endWin,'string',num2str(endWin))
+ set(mydata.startWin,'string',num2str(startWin))
+ set(mydata.offsetFactdisp,'string',num2str(offsetF))
+ set(mydata.scaleFactdisp,'string',num2str(scaleF))
 
 positions=meas.positions;
- %    positions.headYAW = positions.headYAW*0;
+%    positions.headYAW = positions.headYAW*0;
 
 %Make sure all figs have black background
 whitebg('k')
@@ -752,9 +857,13 @@ plot(gaze,'g')
 plot([0,length(allData.data.(trialname).speaker)], [0 0] , 'r')
 plot([0,length(allData.data.(trialname).speaker)], [4 4] , 'r:')
 plot([0,length(allData.data.(trialname).speaker)], [-4 -4] , 'r:')
+
+plot([startWin, startWin], [-20, 20], 'r--')
+plot([endWin, endWin], [-20, 20], 'r--')
 title({'Arm motion(M), Eyes(B), Gaze(G) and Head Yaw(Y) for full record',allData.filename(1:end-9)})
 
-if allData.Excelinfo(plotThis, 7) == 0
+% What to do if the speaker doesn't move ???
+if (meas.start_position - meas.end_position) == 0
     subplot(3,1,2)
     hold off
     plot([0,length(allData.data.(trialname).speaker)], [0 0] , 'r')
@@ -767,6 +876,7 @@ if allData.Excelinfo(plotThis, 7) == 0
     hold on
     return
 end
+
 % Plot of velocities
 subplot(4,1,2)
 hold off
@@ -802,16 +912,24 @@ plot(positions.gaze, 'b')
 
 try
     plot([meas.TargetStart,meas.TargetStart],[-10,10], 'LineStyle', ':','LineWidth', 1, 'Color', 'm');
+catch
+    disp('Could not plot start of speaker motion')
+end
+try
     plot([meas.HeadStart,meas.HeadStart],[-10,10], 'LineStyle', ':','LineWidth', 1, 'Color', 'y');
+catch
+    disp('Could not plot start of head motion')
+end
+try
     plot([meas.GazeStart,meas.GazeStart],[-10,10], 'LineStyle', ':','LineWidth', 1, 'Color', 'b');
 catch
-    disp('Tried and failed - meas.TargetStart')
+    disp('Could not plot start of gaze motion')
 end
 
 netSaccade = 0;
 shortSeg = 0;
-PursuitMotion = [];
-GazeMotion = [];
+%PursuitMotion = [];
+%GazeMotion = [];
 try % mark saccades in red
     i = -1;
     if meas.numGshifts > 0
@@ -825,38 +943,44 @@ try % mark saccades in red
             plot(xes,yes,'linewidth',1,'color','w')
             plot(xes,yesGAZE,'linewidth',2.5,'color','c')
             
-            segment = [xes',yes];
-            gazesegment = [xes',yesGAZE];
-            PursuitMotion = [PursuitMotion, segment'];
-            GazeMotion = [GazeMotion, gazesegment'];
+            %             segment = [xes',yes];
+            %             gazesegment = [xes',yesGAZE];
+            %             PursuitMotion = [PursuitMotion, segment'];
+            %             GazeMotion = [GazeMotion, gazesegment'];
             
-            % desaccade
-            % get smooth segments before and after the saccade
-            prevSmooth = positions.eyesAZ(meas.pursuitMovements_end(i-shortSeg)-100:meas.pursuitMovements_end(i-shortSeg));
-            nextSmooth = positions.eyesAZ(meas.pursuitMovements_start(i+1-shortSeg):(meas.pursuitMovements_start(i+1-shortSeg)+100));
-            
-            % calculate their slopes and take average
-            fit1 = polyfit(1:length(prevSmooth), prevSmooth',1);
-            fit2 = polyfit(1:length(nextSmooth), nextSmooth',1);
-            
-            % multiply that slope by duration of saccade to get AZ drift during saccade
-            drift = (meas.Gshifts_end(i)-meas.Gshifts_start(i))*(fit1(1)+fit2(1))/2;
+            if (length(xes) > 100 && (meas.pursuitMovements_start(i+1-shortSeg)+100) < length(positions.eyesAZ) )
+                % desaccade
+                % get smooth segments before and after the saccade
+                prevSmooth = positions.eyesAZ(meas.pursuitMovements_end(i-shortSeg)-100:meas.pursuitMovements_end(i-shortSeg));
+                nextSmooth = positions.eyesAZ(meas.pursuitMovements_start(i+1-shortSeg):(meas.pursuitMovements_start(i+1-shortSeg)+100));
+                
+                % calculate their slopes and take average
+                fit1 = polyfit(1:length(prevSmooth), prevSmooth',1);
+                fit2 = polyfit(1:length(nextSmooth), nextSmooth',1);
+                
+                % multiply that slope by duration of saccade to get AZ drift during saccade
+                drift = (meas.Gshifts_end(i)-meas.Gshifts_start(i))*(fit1(1)+fit2(1))/2;
+                
+            else
+                drift = 0;
+            end
             netSaccade = netSaccade + positions.eyesAZ(meas.Gshifts_end(i))- positions.eyesAZ(meas.Gshifts_start(i)) - drift ;
-            
             if i == meas.numGshifts
+                
                 plot(meas.pursuitMovements_start(end):meas.pursuitMovements_end(end),positions.eyesAZ(meas.pursuitMovements_start(end):meas.pursuitMovements_end(end))-netSaccade,'linewidth',1,'color','w')
                 plot(meas.pursuitMovements_start(end):meas.pursuitMovements_end(end),positions.eyesAZ(meas.pursuitMovements_start(end):meas.pursuitMovements_end(end))+positions.headYAW(meas.pursuitMovements_start(end):meas.pursuitMovements_end(end))-netSaccade,'linewidth',2.5,'color','c')
+            else
             end
         end
     else
-        plot(positions.eyesAZ,'linewidth',2.5,'color','b')%% Plot whole trace because no saccades
+        plot(positions.eyesAZ,'linewidth',2.5,'color','c')%% Plot whole trace because no saccades
     end
     
 catch
     disp('error Tried and failed to plot smooth pursuit')
     disp(i)
     disp(meas.numGshifts)
-    assignin('base','PursuitMotion',PursuitMotion)
+    %  assignin('base','PursuitMotion',PursuitMotion)
 end
 
 end
@@ -943,172 +1067,172 @@ function [ s ] = xml2struct( file )
 %
 % Modified by X. Mo, University of Wisconsin, 12-5-2012
 
-    if (nargin < 1)
-        clc;
-        help xml2struct
-        return
-    end
-    
-    if isa(file, 'org.apache.xerces.dom.DeferredDocumentImpl') || isa(file, 'org.apache.xerces.dom.DeferredElementImpl')
-        % input is a java xml object
-        xDoc = file;
-    else
-        %check for existance
-        if (exist(file,'file') == 0)
-            %Perhaps the xml extension was omitted from the file name. Add the
-            %extension and try again.
-            if (isempty(strfind(file,'.xml')))
-                file = [file '.xml'];
-            end
-            
-            if (exist(file,'file') == 0)
-                error(['The file ' file ' could not be found']);
-            end
+if (nargin < 1)
+    clc;
+    help xml2struct
+    return
+end
+
+if isa(file, 'org.apache.xerces.dom.DeferredDocumentImpl') || isa(file, 'org.apache.xerces.dom.DeferredElementImpl')
+    % input is a java xml object
+    xDoc = file;
+else
+    %check for existance
+    if (exist(file,'file') == 0)
+        %Perhaps the xml extension was omitted from the file name. Add the
+        %extension and try again.
+        if (isempty(strfind(file,'.xml')))
+            file = [file '.xml'];
         end
-        %read the xml file
-        xDoc = xmlread(file);
+        
+        if (exist(file,'file') == 0)
+            error(['The file ' file ' could not be found']);
+        end
     end
-    
-    %parse xDoc into a MATLAB structure
-    s = parseChildNodes(xDoc);
-    
+    %read the xml file
+    xDoc = xmlread(file);
+end
+
+%parse xDoc into a MATLAB structure
+s = parseChildNodes(xDoc);
+
 end
 
 % ----- Subfunction parseChildNodes -----
 function [children,ptext,textflag] = parseChildNodes(theNode)
-    % Recurse over node children.
-    % Written by W. Falkena, ASTI, TUDelft, 21-08-2010
+% Recurse over node children.
+% Written by W. Falkena, ASTI, TUDelft, 21-08-2010
 % Attribute parsing speed increased by 40% by A. Wanner, 14-6-2011
 % Added CDATA support by I. Smirnov, 20-3-2012
 %
 % Modified by X. Mo, University of Wisconsin, 12-5-2012
-    children = struct;
-    ptext = struct; textflag = 'Text';
-    if hasChildNodes(theNode)
-        childNodes = getChildNodes(theNode);
-        numChildNodes = getLength(childNodes);
-
-        for count = 1:numChildNodes
-            theChild = item(childNodes,count-1);
-            [text,name,attr,childs,textflag] = getNodeData(theChild);
-            
-            if (~strcmp(name,'#text') && ~strcmp(name,'#comment') && ~strcmp(name,'#cdata_dash_section'))
-                %XML allows the same elements to be defined multiple times,
-                %put each in a different cell
-                if (isfield(children,name))
-                    if (~iscell(children.(name)))
-                        %put existsing element into cell format
-                        children.(name) = {children.(name)};
-                    end
-                    index = length(children.(name))+1;
-                    %add new element
-                    children.(name){index} = childs;
-                    if(~isempty(fieldnames(text)))
-                        children.(name){index} = text; 
-                    end
-                    if(~isempty(attr)) 
-                        children.(name){index}.('Attributes') = attr; 
-                    end
-                else
-                    %add previously unknown (new) element to the structure
-                    children.(name) = childs;
-                    if(~isempty(text) && ~isempty(fieldnames(text)))
-                        children.(name) = text; 
-                    end
-                    if(~isempty(attr)) 
-                        children.(name).('Attributes') = attr; 
-                    end
+children = struct;
+ptext = struct; textflag = 'Text';
+if hasChildNodes(theNode)
+    childNodes = getChildNodes(theNode);
+    numChildNodes = getLength(childNodes);
+    
+    for count = 1:numChildNodes
+        theChild = item(childNodes,count-1);
+        [text,name,attr,childs,textflag] = getNodeData(theChild);
+        
+        if (~strcmp(name,'#text') && ~strcmp(name,'#comment') && ~strcmp(name,'#cdata_dash_section'))
+            %XML allows the same elements to be defined multiple times,
+            %put each in a different cell
+            if (isfield(children,name))
+                if (~iscell(children.(name)))
+                    %put existsing element into cell format
+                    children.(name) = {children.(name)};
+                end
+                index = length(children.(name))+1;
+                %add new element
+                children.(name){index} = childs;
+                if(~isempty(fieldnames(text)))
+                    children.(name){index} = text;
+                end
+                if(~isempty(attr))
+                    children.(name){index}.('Attributes') = attr;
                 end
             else
-                ptextflag = 'Text';
-                if (strcmp(name, '#cdata_dash_section'))
-                    ptextflag = 'CDATA';
-                elseif (strcmp(name, '#comment'))
-                    ptextflag = 'Comment';
+                %add previously unknown (new) element to the structure
+                children.(name) = childs;
+                if(~isempty(text) && ~isempty(fieldnames(text)))
+                    children.(name) = text;
                 end
-                
-                %this is the text in an element (i.e., the parentNode) 
-                if (~isempty(regexprep(text.(textflag),'[\s]*','')))
-                    if (~isfield(ptext,ptextflag) || isempty(ptext.(ptextflag)))
-                        ptext.(ptextflag) = text.(textflag);
-                    else
-                        %what to do when element data is as follows:
-                        %<element>Text <!--Comment--> More text</element>
-                        
-                        %put the text in different cells:
-                        % if (~iscell(ptext)) ptext = {ptext}; end
-                        % ptext{length(ptext)+1} = text;
-                        
-                        %just append the text
-                        ptext.(ptextflag) = [ptext.(ptextflag) text.(textflag)];
-                    end
+                if(~isempty(attr))
+                    children.(name).('Attributes') = attr;
                 end
             end
+        else
+            ptextflag = 'Text';
+            if (strcmp(name, '#cdata_dash_section'))
+                ptextflag = 'CDATA';
+            elseif (strcmp(name, '#comment'))
+                ptextflag = 'Comment';
+            end
             
+            %this is the text in an element (i.e., the parentNode)
+            if (~isempty(regexprep(text.(textflag),'[\s]*','')))
+                if (~isfield(ptext,ptextflag) || isempty(ptext.(ptextflag)))
+                    ptext.(ptextflag) = text.(textflag);
+                else
+                    %what to do when element data is as follows:
+                    %<element>Text <!--Comment--> More text</element>
+                    
+                    %put the text in different cells:
+                    % if (~iscell(ptext)) ptext = {ptext}; end
+                    % ptext{length(ptext)+1} = text;
+                    
+                    %just append the text
+                    ptext.(ptextflag) = [ptext.(ptextflag) text.(textflag)];
+                end
+            end
         end
+        
     end
+end
 end
 
 % ----- Subfunction getNodeData -----
 function [text,name,attr,childs,textflag] = getNodeData(theNode)
-    % Create structure of node info.
-    
-    %make sure name is allowed as structure name
-    % Written by W. Falkena, ASTI, TUDelft, 21-08-2010
+% Create structure of node info.
+
+%make sure name is allowed as structure name
+% Written by W. Falkena, ASTI, TUDelft, 21-08-2010
 % Attribute parsing speed increased by 40% by A. Wanner, 14-6-2011
 % Added CDATA support by I. Smirnov, 20-3-2012
 %
 % Modified by X. Mo, University of Wisconsin, 12-5-2012
-    name = toCharArray(getNodeName(theNode))';
-    name = strrep(name, '-', '_dash_');
-    name = strrep(name, ':', '_colon_');
-    name = strrep(name, '.', '_dot_');
+name = toCharArray(getNodeName(theNode))';
+name = strrep(name, '-', '_dash_');
+name = strrep(name, ':', '_colon_');
+name = strrep(name, '.', '_dot_');
 
-    attr = parseAttributes(theNode);
-    if (isempty(fieldnames(attr))) 
-        attr = []; 
-    end
-    
-    %parse child nodes
-    [childs,text,textflag] = parseChildNodes(theNode);
-    
-    if (isempty(fieldnames(childs)) && isempty(fieldnames(text)))
-        %get the data of any childless nodes
-        % faster than if any(strcmp(methods(theNode), 'getData'))
-        % no need to try-catch (?)
-        % faster than text = char(getData(theNode));
-        text.(textflag) = toCharArray(getTextContent(theNode))';
-    end
-    
+attr = parseAttributes(theNode);
+if (isempty(fieldnames(attr)))
+    attr = [];
+end
+
+%parse child nodes
+[childs,text,textflag] = parseChildNodes(theNode);
+
+if (isempty(fieldnames(childs)) && isempty(fieldnames(text)))
+    %get the data of any childless nodes
+    % faster than if any(strcmp(methods(theNode), 'getData'))
+    % no need to try-catch (?)
+    % faster than text = char(getData(theNode));
+    text.(textflag) = toCharArray(getTextContent(theNode))';
+end
+
 end
 
 % ----- Subfunction parseAttributes -----
 function attributes = parseAttributes(theNode)
-    % Create attributes structure.
-    % Written by W. Falkena, ASTI, TUDelft, 21-08-2010
+% Create attributes structure.
+% Written by W. Falkena, ASTI, TUDelft, 21-08-2010
 % Attribute parsing speed increased by 40% by A. Wanner, 14-6-2011
 % Added CDATA support by I. Smirnov, 20-3-2012
 %
 % Modified by X. Mo, University of Wisconsin, 12-5-2012
 
-    attributes = struct;
-    if hasAttributes(theNode)
-       theAttributes = getAttributes(theNode);
-       numAttributes = getLength(theAttributes);
-
-       for count = 1:numAttributes
-            %attrib = item(theAttributes,count-1);
-            %attr_name = regexprep(char(getName(attrib)),'[-:.]','_');
-            %attributes.(attr_name) = char(getValue(attrib));
-
-            %Suggestion of Adrian Wanner
-            str = toCharArray(toString(item(theAttributes,count-1)))';
-            k = strfind(str,'='); 
-            attr_name = str(1:(k(1)-1));
-            attr_name = strrep(attr_name, '-', '_dash_');
-            attr_name = strrep(attr_name, ':', '_colon_');
-            attr_name = strrep(attr_name, '.', '_dot_');
-            attributes.(attr_name) = str((k(1)+2):(end-1));
-       end
+attributes = struct;
+if hasAttributes(theNode)
+    theAttributes = getAttributes(theNode);
+    numAttributes = getLength(theAttributes);
+    
+    for count = 1:numAttributes
+        %attrib = item(theAttributes,count-1);
+        %attr_name = regexprep(char(getName(attrib)),'[-:.]','_');
+        %attributes.(attr_name) = char(getValue(attrib));
+        
+        %Suggestion of Adrian Wanner
+        str = toCharArray(toString(item(theAttributes,count-1)))';
+        k = strfind(str,'=');
+        attr_name = str(1:(k(1)-1));
+        attr_name = strrep(attr_name, '-', '_dash_');
+        attr_name = strrep(attr_name, ':', '_colon_');
+        attr_name = strrep(attr_name, '.', '_dot_');
+        attributes.(attr_name) = str((k(1)+2):(end-1));
     end
+end
 end
