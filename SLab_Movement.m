@@ -325,10 +325,6 @@ allData.trialList = trialList;
 allData.trialkeyList = trialkeyList;
 allData.num_trials=length(trialList);
 
-% mydata.flagthistrace=uicontrol(mydata.MainFigure,'style','checkbox',...
-%     'position',[10,620,50,20],...
-%     'callback',{@flagthistrace mydata});
-
 mydata.removethis=uicontrol(mydata.MainFigure,'style','push','string',...
     'Remove Trial','position',[10,150,100,20],...
     'TooltipString','Removes the current trial from ths list',...
@@ -396,16 +392,22 @@ save(datafilename, 'allData')
 end
 
 function Export(~,~,mydata)
-directoryname = uigetdir('', 'Please select the folder to save the Excel analysis output into');
+%directoryname = uigetdir('', 'Please select the folder to save the Excel analysis output into');
+
 disp('Starting Excel Export')
-cd(directoryname)
+%cd(directoryname)
 allData=get(mydata.MainFigure,'userdata');
+directoryname = allData.PathName;
+
 f=allData.trialList;
-filename = [allData.filename(1:end-4),'_Slopes.xls'];
-datafilename = [allData.filename(1:end-4),'_allData.mat'];
-save(datafilename, 'allData')
+filename = [directoryname, allData.filename(1:end-4),'_Slopes.xls'];
+
 % Export to Excel
-xlswrite(filename, { 'Subject'	'LVTrial#'  'XLTrial'	'Start angle'	'End angle' 	'Velocity'	'Peak Gaze Pursuit'	'Mean Gaze Pursuit'	'Weighted Gaze Pursuit'	'# Pursuit segments'	'Fraction pursuit > 250ms'  'Fraction all pursuit' 'Head Start' 'Gaze Start' 'Scale Factor' 'Offset'}, 'Sheet1', 'A1')
+%xlswrite(filename, { 'Subject'	'LVTrial#'  'XLTrial'	'Start angle'	'End angle' 	'Velocity'	'Peak Gaze Pursuit'	'Mean Gaze Pursuit'	'Weighted Gaze Pursuit'	'# Pursuit segments'	'Fraction pursuit > 250ms'  'Fraction all pursuit' 'Head Start' 'Gaze Start' 'Scale Factor' 'Offset'}, 'Sheet1', 'A1')
+
+xlswrite(filename, { 'Subject'	'LVTrial#'  'XLTrial'	'Start angle'	'End angle' 	'Velocity'...
+    'Peak Gaze Pursuit'	'Time to Peak' 'Mean Gaze Pursuit'  '# Pursuit segments' 'Fraction all pursuit' ...
+    '# Pursuit segments > 250ms'	'Fraction pursuit > 250ms'   'Head Start' 'Gaze Start'}, 'Sheet1', 'A1')
 xlswrite(filename, { 'Subject'	'LVTrial#'  'XLTrial'	'Segment Start'  'Segment End'  'Segment Velocity' 	'Pursuit Segments > 250 ms'	}, 'Sheet2', 'A1')
 xlswrite(filename, { 'Subject'	'LVTrial#'  'XLTrial'	'Segment Start'  'Segment End'  'Segment Velocity' 	'Pursuit Segments < 250 ms'	}, 'Sheet3', 'A1')
 xlswrite(filename, { 'Subject'	'LVTrial#'  'XLTrial'	'Segment Start'  'Segment End'  'Segment Velocity' 	'Saccade Segments'	}, 'Sheet4', 'A1')
@@ -413,12 +415,12 @@ xlswrite(filename, { 'Subject'	'LVTrial#'  'XLTrial'	'Segment Start'  'Segment E
 scale = zeros(length(f),2);
 scale(:,1) = 1;
 
-for i = 1:length(f)
+for i = 1:20%length(f)
     
-    xlcell = ['A', num2str(i+1), ':P', num2str(i+1)];
+    xlcell = ['A', num2str(i+1), ':O', num2str(i+1)];
     trialnumber=f{i}{1};
-    xltrialnum = allData.Excelinfo(i,1);
-    if allData.Excelinfo(i,7) == 0 % Skip if zero velocity
+    xltrialnum = str2double(trialnumber(7:end)); %allData.Excelinfo(i,1);
+    if allData.Excelinfo(xltrialnum,7) == 0 % Skip if zero velocity
         disp(['No speaker movement Trial ' num2str(i)])
         xlswrite(filename, { allData.Subject,	trialnumber, xltrialnum, 'No speaker movement this trial'},  'Sheet1', ['A', num2str(i+1), ':D', num2str(i+1)])
         xlswrite(filename, { allData.Subject,	trialnumber, xltrialnum, 'No speaker movement this trial'},  'Sheet2', ['A', num2str(i+1), ':D', num2str(i+1)])
@@ -427,29 +429,34 @@ for i = 1:length(f)
         continue
     end
     
+    disp(['Analyzing trial ' num2str(xltrialnum)])
     meas=MeasureTrial(mydata,trialnumber,allData.data.(trialnumber).scaleF,allData.data.(trialnumber).offsetF );
-    disp(['Analyzing trial ' num2str(i)])
-    startAngle = allData.Excelinfo(i,5);
-    endAngle = allData.Excelinfo(i,6);
-    velocity = allData.Excelinfo(i,7);
+    
+    startAngle = allData.Excelinfo(xltrialnum,5);
+    endAngle = allData.Excelinfo(xltrialnum,6);
+    velocity = allData.Excelinfo(xltrialnum,7);
     
     try %Summary Page - Sheet 1
         validSegments = meas.pursuitDurations > 250;
-        pursuitVelocitiesList = abs(meas.pursuitMeanVelocities(validSegments));
-        pursuitfraction = sum(meas.pursuitAmplitudes(validSegments))/(endAngle-startAngle);
+        validSegments(1) = 0; % always exclude the first, flat segment
+        pursuitVelocitiesList = abs(meas.pursuitMeanVelocities(validSegments)); 
+        [peakpursuit, peakindex] = max(pursuitVelocitiesList);
+        SPstartlist = meas.pursuitMovements_start(validSegments);
+        SPendlist = meas.pursuitMovements_end(validSegments);
+        time2peak = (SPendlist(peakindex)-SPstartlist(peakindex))/2+SPstartlist(peakindex)-500;
+        meanpursuit =  mean(pursuitVelocitiesList);
+        numSegments = meas.numPursuitMovements;   
         allpursuitfraction = sum(meas.pursuitAmplitudes)/(endAngle-startAngle);
-        numSegments = sum(validSegments);
+        numvalidSegments = sum(validSegments);
+        pursuitfraction = sum(meas.pursuitAmplitudes(validSegments))/(endAngle-startAngle);
+        
+        
         headstart = meas.HeadStart-meas.TargetStart;
         gazestart = meas.GazeStart-meas.TargetStart;
-        scale(i, 1) = allData.data.(trialnumber).scaleF;
-        scale(i, 2) = allData.data.(trialnumber).offsetF;
-        
-        weightedMean = abs(sum(dot(meas.pursuitDurations(validSegments),pursuitVelocitiesList))/sum(meas.pursuitDurations(validSegments)));
-        
+      
         xlswrite(filename, { allData.Subject,	trialnumber,	xltrialnum, startAngle, ...
-            endAngle,	velocity,	max(pursuitVelocitiesList), mean(pursuitVelocitiesList(2:end))	...
-            ,weightedMean,	numSegments,	pursuitfraction, allpursuitfraction, headstart, gazestart, scale(i, 1),...
-            scale(i, 2)}, 'Sheet1', xlcell)
+            endAngle,	velocity,	peakpursuit, time2peak ,	...
+            meanpursuit, numSegments ,allpursuitfraction,	numvalidSegments, pursuitfraction, headstart, gazestart}, 'Sheet1', xlcell)
     catch
         disp(['Problem writing sheet 1 (summary) data for ' trialnumber])
         xlswrite(filename, { allData.Subject,	trialnumber,xltrialnum, 'No valid segments'},  'Sheet1', ['A', num2str(i+1), ':D', num2str(i+1)])
@@ -558,7 +565,7 @@ for i = 1:length(f)
     
 end
 xlswrite(filename, { 'Export Complete'},  'Sheet1', ['A', num2str(i+2), ':A', num2str(i+2)])
-save(scalefilename, 'scale')
+%save(scalefilename, 'scale')
 disp([ 'Export finished. Check Excel file ' filename ])
 
 end
@@ -574,53 +581,18 @@ positions.speakerAZ=allData.data.(trialname).speaker;
 positions.headYAW=allData.data.(trialname).Head_Yaw*scaleAZ+offsetAZ;
 
 positions.gaze = positions.eyesAZ + positions.headYAW;
-%    if (max(positions.headYAW) - min(positions.headYAW) > 100)
-positions.headYAW = positions.headYAW*0;
-%   end
+positions.headYAW = positions.headYAW;
+
 velocities= calcva(positions,20);
 
 try % calculate the trail start and end positions
     m.start_position = round(mean(positions.speakerAZ(200:300)));
     m.end_position = round(mean(positions.speakerAZ(end-300:end)));
     %
-    % Determine when the speaker starts moving by a linear fit to 80% of
-    % the motion
-    % ramptrail = (positions.speakerAZ'-m.start_position)*sign(m.end_position-m.start_position);
+    % Determine when the speaker starts moving by abs velocity change
     ramptrail = abs(velocities.speakerAZ);
-    %     x1 = find(ramptrail > 0.25*max(ramptrail),1);
-    %     x2 = find(ramptrail > 0.75*max(ramptrail),1);
-    %     X = ramptrail(x1:x2);
-    %     Y = x1:x2;
     start_time = find(ramptrail> 0.2*max(ramptrail),1);%floor(roots(polyfit(X,Y,1))+x1);
     end_time = length(positions.speakerAZ);
-    
-    
-    % Determine when the head starts moving by a linear fit to 80% of
-    % the motion
-    %  headstartpos = round(mean(positions.headYAW(start_time-500:start_time)));
-    % headpath = (positions.headYAW(start_time-500:end)'-headstartpos)*sign(m.end_position-m.start_position);
-    %assignin('base','headpath', headpath)
-    %     x1 = find(headpath > 0.1*max(headpath),1);
-    %     x2 = find(headpath > 0.9*max(headpath),1);
-    %     X = headpath(x1:x2);
-    %     Y = x1:x2;
-    %     start_head =floor(roots(polyfit(X,Y,1))+x1);
-    headtrail = abs(velocities.headYAW(start_time-500:end));
-    start_head = find(headtrail > 0.2*max(headtrail),1);
-    
-    % Find the start of the head movement by interpolating back from the
-    % midpoint of the start of the movement
-    %     gazestartpos = round(mean(positions.gaze(start_time-500:start_time)));
-    %     gazepath = (positions.gaze(start_time-500:end_time)'-gazestartpos)*sign(m.end_position-m.start_position);
-    %assignin('base','gazepath', gazepath)
-    %     x1 = find(gazepath > 0.25*max(gazepath),1);
-    %     x2 = find(gazepath > 0.75*max(gazepath),1);
-    %     X = gazepath(x1:x2);
-    %     Y = x1:x2;
-    %     start_gaze =floor(roots(polyfit(X,Y,1))+x1);
-    gazetrail = abs(velocities.gaze(start_time-500:end));
-    start_gaze =find(gazetrail > 20,1);
-    
     
     
     rampVels = abs(velocities.speakerAZ(start_time:end_time));
@@ -672,8 +644,13 @@ try % calculate the trail start and end positions
     
     velocities = calcva(positions,20);
     
+    headtrail = abs(velocities.headYAW);
+    start_head = find(headtrail > 0.2*max(headtrail),1);
+    
+    gazetrail = abs(velocities.gaze);
+    start_gaze =find(gazetrail > 0.2*max(gazetrail),1);
+    
     smoothvels = calcva(positions,500);
-    % accelerations = velocities;
     
     %figure;plot(accelerations.gaze);figure;
     %  eyesAZvelon = 15; % saccades if faster then 50
@@ -687,10 +664,9 @@ try % calculate the trail start and end positions
     end
     
     eyesAZvelon = thisThresh*max(abs(velocities.gaze-smoothvels.gaze));
-    %  eyesAZaccon = 120;
+
     Gshifts_ind = find(abs(velocities.gaze-smoothvels.gaze) > eyesAZvelon);
     % Gshifts_ind= union(find(abs(velocities.gaze) > eyesAZvelon);%,...
-    %   find(abs(accelerations.gaze) > eyesAZaccon)); %indicies of saccades
     skirtwidth = 20;
     Gshifts_withSkirt = [];
     for index = Gshifts_ind
@@ -699,7 +675,7 @@ try % calculate the trail start and end positions
     Gshifts_withSkirt(Gshifts_withSkirt < 1) = 500;
     Gshifts_withSkirt(Gshifts_withSkirt > numSamples) = 500;
     
-        % adds a 'saccade' where the start of the speaker movement occurs
+    % adds a 'saccade' where the start of the speaker movement occurs
     Gshifts_ind = unique([475:525,Gshifts_withSkirt]);
     
     % anything not saccade is pursuit
@@ -816,8 +792,6 @@ set(mydata.listbox,'string',[allData.trialList{1:end}],'value',plotThis);
 
 scaleAZ = allData.data.scaleAZ;
 offsetAZ = allData.data.offsetAZ;
-% scaleEL = allData.data.scaleEL;
-% offsetEL = allData.data.offsetEL;
 
 scaleF = allData.data.(trialname).scaleF;
 offsetF = allData.data.(trialname).offsetF;
@@ -825,19 +799,16 @@ offsetF = allData.data.(trialname).offsetF;
 meas=MeasureTrial(mydata,trialname, scaleF, offsetF);
 assignin('base','meas',meas);
 allData=get(mydata.MainFigure,'userdata');
-%allData.data.(trialname).startWin
+
 startWin = allData.data.(trialname).startWin;
 endWin = allData.data.(trialname).endWin;
 
-% str2double(get(mydata.endWin,'string'));
-% startWin = str2double(get(mydata.startWin,'string'));
- set(mydata.endWin,'string',num2str(endWin))
- set(mydata.startWin,'string',num2str(startWin))
- set(mydata.offsetFactdisp,'string',num2str(offsetF))
- set(mydata.scaleFactdisp,'string',num2str(scaleF))
+set(mydata.endWin,'string',num2str(endWin))
+set(mydata.startWin,'string',num2str(startWin))
+set(mydata.offsetFactdisp,'string',num2str(offsetF))
+set(mydata.scaleFactdisp,'string',num2str(scaleF))
 
 positions=meas.positions;
-%    positions.headYAW = positions.headYAW*0;
 
 %Make sure all figs have black background
 whitebg('k')
@@ -928,8 +899,7 @@ end
 
 netSaccade = 0;
 shortSeg = 0;
-%PursuitMotion = [];
-%GazeMotion = [];
+
 try % mark saccades in red
     i = -1;
     if meas.numGshifts > 0
@@ -942,11 +912,6 @@ try % mark saccades in red
             
             plot(xes,yes,'linewidth',1,'color','w')
             plot(xes,yesGAZE,'linewidth',2.5,'color','c')
-            
-            %             segment = [xes',yes];
-            %             gazesegment = [xes',yesGAZE];
-            %             PursuitMotion = [PursuitMotion, segment'];
-            %             GazeMotion = [GazeMotion, gazesegment'];
             
             if (length(xes) > 100 && (meas.pursuitMovements_start(i+1-shortSeg)+100) < length(positions.eyesAZ) )
                 % desaccade
