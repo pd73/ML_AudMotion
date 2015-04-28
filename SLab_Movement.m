@@ -92,9 +92,9 @@ allData=get(mydata.MainFigure,'userdata');
 plotThis=allData.currentPlot;
 f=allData.trialList;
 trialname=f{plotThis}{1};
-
+whitebg([0.3,0.3,0.3])
 [x,~] = ginput(1);
-
+whitebg('k')
 x = round(x);
 spkstart = 0;
 spkend = mean(allData.data.(trialname).speaker(x-250:x+250));
@@ -159,7 +159,6 @@ else
     
     out = xml2struct([PathName, xmlfile]);
     % NB use the the xml2struct function of Falkena, Wanner, Smirnov & Mo
-    
     assignin('base', 'out',out)
     
     numAnalogChans = length(out.GXML_Root.Device_Config.Analog_Names.String);
@@ -174,7 +173,8 @@ else
     
     [B,A] = butter(12,0.1,'low');
     
-    inneroffset = -0.7109;% varName{find(strcmp('Inr_Offset',varName)),2}/100;
+    %inneroffset = -0.7109;% varName{find(strcmp('Inr_Offset',varName)),2}/100; Per Justin, the number is calculated on a daily basis and needs to be pulled from the spreadsheet.
+    inneroffset = str2double(out.GXML_Root.Excel_Cluster{1, 1}.Inr_Offset.Text);
     
     totalNumTrials = length(out.GXML_Root.Excel_Cluster);
     Excelinfo = zeros(totalNumTrials, 7);
