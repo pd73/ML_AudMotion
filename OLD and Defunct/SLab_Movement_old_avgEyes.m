@@ -104,12 +104,7 @@ offsetAZ = allData.data.offsetAZ;
 
 headpos = mean(allData.data.(trialname).Head_Yaw(x-500:x+250))*scaleAZ+offsetAZ;
 
-% eyesAZ = (allData.data.(trialname).eyesAZ_R+allData.data.(trialname).eyesAZ_L)/2;
-if allData.data.(trialname).speaker(1) >= 0   %Use good eye (contralateral to calibration look to center)
-	eyesAZ = allData.data.(trialname).eyesAZ_R;
-else 
-	eyesAZ = allData.data.(trialname).eyesAZ_L;
-end
+eyesAZ = (allData.data.(trialname).eyesAZ_R+allData.data.(trialname).eyesAZ_L)/2;
 eyestart = mean(eyesAZ(x-500:x-250));
 eyeend = mean(eyesAZ(x+250:x+500));
 
@@ -820,12 +815,7 @@ plot(scaleF*allData.data.(trialname).eyesAZ_L+offsetF,'b:')
 plot(allData.data.(trialname).speaker,'m')
 plot(allData.data.(trialname).Head_Yaw*scaleAZ+offsetAZ,'y')
 
-% gaze = allData.data.(trialname).Head_Yaw*scaleAZ+offsetAZ + scaleF*(allData.data.(trialname).eyesAZ_R+allData.data.(trialname).eyesAZ_L)/2+offsetF;
-if allData.data.(trialname).speaker(1) >= 0
-	gaze = allData.data.(trialname).Head_Yaw*scaleAZ+offsetAZ + scaleF*(allData.data.(trialname).eyesAZ_R)+offsetF;
-else
-	gaze = allData.data.(trialname).Head_Yaw*scaleAZ+offsetAZ + scaleF*(allData.data.(trialname).eyesAZ_L)+offsetF;
-end
+gaze = allData.data.(trialname).Head_Yaw*scaleAZ+offsetAZ + scaleF*(allData.data.(trialname).eyesAZ_R+allData.data.(trialname).eyesAZ_L)/2+offsetF;
 plot(gaze,'g')
 
 plot([0,length(allData.data.(trialname).speaker)], [0 0] , 'r')

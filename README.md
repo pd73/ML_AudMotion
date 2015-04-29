@@ -31,6 +31,7 @@ Arm motion start time is determined from velocity representation, first time at 
 * very good correspondance between start of movement from velocity and the by-eye start of arm movement.
 * Yellow dashed line is the start of head motion, also as 10% of max head motion.
 * blue dahed is start of gaze motion, set at gaze velocity great than 20 deg/sec
+5.5 Note that the eye signal is taken from the 'good' eye. For EOG there is only one eye. For Elmar, the Good Eye is the eye signal from the hemifield that the speaker is in. This has the most impact on calibration, when the bad eye can saturate and throw off the scaling
 
 *6. Desaccading*
 % 6.1 Skirt - use 30ms 'skirt' around and saccade points - this is not done yet
