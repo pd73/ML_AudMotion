@@ -101,14 +101,21 @@ spkend = mean(allData.data.(trialname).speaker(x-250:x+250));
 
 scaleAZ = allData.data.scaleAZ;
 offsetAZ = allData.data.offsetAZ;
+eyes = allData.data.(trialname).eyes;
 
 headpos = mean(allData.data.(trialname).Head_Yaw(x-500:x+250))*scaleAZ+offsetAZ;
 
 % eyesAZ = (allData.data.(trialname).eyesAZ_R+allData.data.(trialname).eyesAZ_L)/2;
-if allData.data.(trialname).speaker(1) >= 0   %Use good eye (contralateral to calibration look to center)
+if eyes == 1
+if allData.data.(trialname).speaker(1) >= 0
 	eyesAZ = allData.data.(trialname).eyesAZ_R;
-else 
+else
 	eyesAZ = allData.data.(trialname).eyesAZ_L;
+end
+elseif eyes == 2
+    eyesAZ = allData.data.(trialname).eyesAZ_R;
+else
+    eyesAZ = allData.data.(trialname).eyesAZ_L;
 end
 eyestart = mean(eyesAZ(x-500:x-250));
 eyeend = mean(eyesAZ(x+250:x+500));
@@ -239,6 +246,7 @@ else
         data.(['trial_', num2str(trialNum)]).eyesAZ_L = eyesAZ_L;
         data.(['trial_', num2str(trialNum)]).eyesEL_R = eyesEL_R;
         data.(['trial_', num2str(trialNum)]).eyesEL_L = eyesEL_L;
+        data.(['trial_', num2str(trialNum)]).eyesAZ = (eyesAZ_R+eyesAZ_L)/2;
         
         data.(['trial_', num2str(trialNum)]).Head_Yaw = Head_Yaw;
         data.(['trial_', num2str(trialNum)]).Head_Pitch = Head_Pitch;
@@ -375,11 +383,15 @@ mydata.copyGainOffset= uicontrol(mydata.MainFigure,'Style','pushbutton',...
 mydata.copyGainOffset= uicontrol(mydata.MainFigure,'Style','pushbutton',...
     'Position', [10,530,80,20], 'String', 'Previous Scale', 'Callback', {@CopyGainOffset mydata});
 
+mydata.eyes= uicontrol(mydata.MainFigure,'Style','popup',...
+    'Position', [100,730,80,20], 'String', 'Alternating|Right|Left', 'Callback', {@SelectEyes mydata});
+
 mydata.listbox = uicontrol('Style', 'listbox',...
     'Position', [10,200,120,320], 'Callback', {@ListCallback mydata});
 
 set(mydata.listbox,'string',[trialkeyList{1:end}],...
     'Callback', {@ListCallback mydata},'visible','on');
+
 PlotTrial([],[],mydata)
 
 end
@@ -388,6 +400,16 @@ function SaveSession(~,~,mydata)
 allData=get(mydata.MainFigure,'userdata');
 datafilename = [allData.PathName, allData.filename(1:end-4),'_allData.mat'];
 save(datafilename, 'allData')
+end
+
+function SelectEyes(cbo,~,mydata)
+allData=get(mydata.MainFigure,'userdata');
+plotThis=allData.currentPlot;
+f=allData.trialList;
+trialname=f{plotThis}{1};
+allData.data.(trialname).eyes = get(cbo,'Value');
+allData.data.(trialname).eyes
+set(mydata.MainFigure,'userdata',allData)
 end
 
 function Export(~,~,mydata)
@@ -407,7 +429,7 @@ filename = [directoryname, allData.filename(1:end-4),'_Slopes.xls'];
 %xlswrite(filename, { 'Subject'	'LVTrial#'  'XLTrial'	'Start angle'	'End angle' 	'Velocity'	'Peak Gaze Pursuit'	'Mean Gaze Pursuit'	'Weighted Gaze Pursuit'	'# Pursuit segments'	'Fraction valid pursuit'  'Fraction all pursuit' 'Head Start' 'Gaze Start' 'Scale Factor' 'Offset'}, 'Sheet1', 'A1')
 
 xlswrite(filename, { 'Subject'	'LVTrial#'  'XLTrial'	'Start angle'	'End angle' 	'Velocity'...
-    'Central Slope' 'Peak Gaze Pursuit'	'Time to Peak' 'Mean Gaze Pursuit'  '# Pursuit segments' 'Fraction all pursuit' ...
+    'Central Slope' 'Central Slope Head YAW' 'Peak Gaze Pursuit'	'Time to Peak' 'Mean Gaze Pursuit'  '# Pursuit segments' 'Fraction all pursuit' ...
     '# Valid pursuit segments'	'Fraction valid pursuit'   'Head Start' 'Gaze Start'}, 'Sheet1', 'A1')
 xlswrite(filename, { 'Subject'	'LVTrial#'  'XLTrial'	'Segment Start'  'Segment End'  'Segment Velocity' 	'Valid Pursuit Segments'	}, 'Sheet2', 'A1')
 xlswrite(filename, { 'Subject'	'LVTrial#'  'XLTrial'	'Segment Start'  'Segment End'  'Segment Velocity' 	'Invalid Pursuit Segments'	}, 'Sheet3', 'A1')
@@ -415,7 +437,7 @@ xlswrite(filename, { 'Subject'	'LVTrial#'  'XLTrial'	'Segment Start'  'Segment E
 
 for i = 1:length(f)
     
-    xlcell = ['A', num2str(i+1), ':P', num2str(i+1)];
+    xlcell = ['A', num2str(i+1), ':Q', num2str(i+1)];
     trialnumber=f{i}{1};
     xltrialnum = str2double(trialnumber(7:end)); %allData.Excelinfo(i,1);
     if allData.Excelinfo(xltrialnum,7) == 0 % Skip if zero velocity
@@ -439,6 +461,7 @@ for i = 1:length(f)
         validSegments(1) = 0; % always exclude the first, flat segment
         pursuitVelocitiesList = abs(meas.pursuitMeanVelocities(validSegments));
         centralslope = abs(allData.data.(trialnumber).centralslope);
+        centralslopeYAW = allData.data.(trialnumber).centralslopeYAW;
         [peakpursuit, peakindex] = max(pursuitVelocitiesList);
         SPstartlist = meas.pursuitMovements_start(validSegments);
         SPendlist = meas.pursuitMovements_end(validSegments);
@@ -453,7 +476,7 @@ for i = 1:length(f)
         gazestart = meas.GazeStart-meas.TargetStart;
         
         xlswrite(filename, { allData.Subject,	trialnumber,	xltrialnum, startAngle, ...
-            endAngle,	velocity,	centralslope, peakpursuit, time2peak ,	...
+            endAngle,	velocity,	centralslope, centralslopeYAW, peakpursuit, time2peak ,	...
             meanpursuit, numSegments ,allpursuitfraction,	numvalidSegments, pursuitfraction, headstart, gazestart}, 'Sheet1', xlcell)
     catch
         disp(['Problem writing sheet 1 (summary) data for ' trialnumber])
@@ -573,7 +596,7 @@ allData=get(mydata.MainFigure,'userdata');
 scaleAZ = allData.data.scaleAZ;
 offsetAZ = allData.data.offsetAZ;
 %horizontal
-positions.eyesAZ=(allData.data.(trialname).eyesAZ_R+allData.data.(trialname).eyesAZ_L)/2*scaleF+offsetF;
+positions.eyesAZ=allData.data.(trialname).eyesAZ*scaleF+offsetF;
 positions.eyesEL=allData.data.(trialname).eyesEL_R;
 positions.speakerAZ=allData.data.(trialname).speaker;
 positions.headYAW=allData.data.(trialname).Head_Yaw*scaleAZ+offsetAZ;
@@ -801,10 +824,28 @@ allData=get(mydata.MainFigure,'userdata');
 startWin = allData.data.(trialname).startWin;
 endWin = allData.data.(trialname).endWin;
 
+if ~isfield(allData.data.(trialname), 'eyes')
+    allData.data.(trialname).eyes = 1;
+end
+eyes = allData.data.(trialname).eyes;
+
 set(mydata.endWin,'string',num2str(endWin))
 set(mydata.startWin,'string',num2str(startWin))
 set(mydata.offsetFactdisp,'string',num2str(offsetF))
 set(mydata.scaleFactdisp,'string',num2str(scaleF))
+set(mydata.eyes,'Value',eyes)
+
+if eyes == 1
+if allData.data.(trialname).speaker(1) >= 0
+	allData.data.(trialname).eyesAZ = allData.data.(trialname).eyesAZ_R;
+else
+	allData.data.(trialname).eyesAZ = allData.data.(trialname).eyesAZ_L;
+end
+elseif eyes == 2
+    allData.data.(trialname).eyesAZ = allData.data.(trialname).eyesAZ_R;
+else
+    allData.data.(trialname).eyesAZ = allData.data.(trialname).eyesAZ_L;
+end
 
 positions=meas.positions;
 
@@ -820,12 +861,7 @@ plot(scaleF*allData.data.(trialname).eyesAZ_L+offsetF,'b:')
 plot(allData.data.(trialname).speaker,'m')
 plot(allData.data.(trialname).Head_Yaw*scaleAZ+offsetAZ,'y')
 
-% gaze = allData.data.(trialname).Head_Yaw*scaleAZ+offsetAZ + scaleF*(allData.data.(trialname).eyesAZ_R+allData.data.(trialname).eyesAZ_L)/2+offsetF;
-if allData.data.(trialname).speaker(1) >= 0
-	gaze = allData.data.(trialname).Head_Yaw*scaleAZ+offsetAZ + scaleF*(allData.data.(trialname).eyesAZ_R)+offsetF;
-else
-	gaze = allData.data.(trialname).Head_Yaw*scaleAZ+offsetAZ + scaleF*(allData.data.(trialname).eyesAZ_L)+offsetF;
-end
+gaze = allData.data.(trialname).Head_Yaw*scaleAZ+offsetAZ + scaleF*allData.data.(trialname).eyesAZ+offsetF;
 plot(gaze,'g')
 
 plot([0,length(allData.data.(trialname).speaker)], [0 0] , 'r')
@@ -879,7 +915,9 @@ subplot(4,1,4)
 hold off
 plot(positions.eyesAZ,'g')
 title({'Smooth pursuit and saccades extracted',['Excel trial ',num2str(allData.Excelinfo(plotThis,1)) ,' : ',sprintf('Az1 = %d Az2 = %d Vel = %d',allData.Excelinfo(plotThis,5:7))]})
+
 hold on
+
 plot(positions.speakerAZ,'m')
 plot(positions.headYAW,'y')
 plot(positions.gaze, 'b')
@@ -977,6 +1015,12 @@ try % mark saccades in red
         ispk75 = find((meas.positions.speakerAZ < spkStart+0.75*distance),1);
     end
     
+    hxes = ispk25:ispk75;
+    hyes = positions.headYAW(hxes)';
+    % try and fine the head movement in this range
+    fitparh = polyfit(hxes, hyes, 1);
+    allData.data.(trialname).centralslopeYAW = fitparh(1)*1000;
+    
     ipursuitStart = find(meas.pursuitMovements_ind > ispk25,1);
     ipursuitEnd = find(meas.pursuitMovements_ind > ispk75,1);
     xes = meas.pursuitMovements_ind(ipursuitStart:ipursuitEnd);%ispk25:ispk75%[ipursuitStart:ipursuitEnd]+spkStart;
@@ -984,7 +1028,7 @@ try % mark saccades in red
     
     plot(xes,yes, 'go')%; hold on; plot(meas.pursuitMovements_ind,desacpursuit, 'y-'); plot(meas.positions.speakerAZ,'r-')
     fitpar = polyfit(xes, yes, 1);
-    text(xes(1),yes(1)-10,['Central Slope = ' num2str(fitpar(1)*1000, '%0.1f') ' deg/s'])
+    text(xes(1),yes(1)-10,{['Central Slope = ' num2str(fitpar(1)*1000, '%0.1f') ' deg/s'];['Head C. Slope = ' num2str(fitparh(1)*1000, '%0.1f') ' deg/s']})
     
     allData.data.(trialname).centralslope = fitpar(1)*1000;
     set(mydata.MainFigure,'userdata',allData);
