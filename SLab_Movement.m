@@ -160,6 +160,14 @@ if length(datafile) == 1
     load(datafilename) % variable scale is loaded
     disp('Found previously saved session')
     disp(['Loading file ' xmlfile])
+   % assignin('base', 'allData',allData)
+    try
+    disp(length(allData.data.trial_1.eyesAZ))
+    catch
+        for i=1:allData.num_trials
+            allData.data.(['trial_', num2str(i)]).eyesAZ = (allData.data.(['trial_', num2str(i)]).eyesAZ_R+allData.data.(['trial_', num2str(i)]).eyesAZ_L)/2;
+        end
+    end
 else
     disp('No previous session found')
     disp(['Loading file ' xmlfile])
