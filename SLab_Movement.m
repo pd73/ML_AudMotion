@@ -429,7 +429,9 @@ disp('Starting Excel Export')
 %cd(directoryname)
 allData=get(mydata.MainFigure,'userdata');
 directoryname = allData.PathName;
-
+if isempty(dir(directoryname))
+    directoryname = uigetdir;
+end
 f=allData.trialList;
 filename = [directoryname, allData.filename(1:end-4),'_Slopes.xls'];
 
