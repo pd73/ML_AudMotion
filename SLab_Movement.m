@@ -101,17 +101,21 @@ spkend = mean(allData.data.(trialname).speaker(x-250:x+250));
 
 scaleAZ = allData.data.scaleAZ;
 offsetAZ = allData.data.offsetAZ;
+
+if ~isfield(allData.data.(trialname), 'eyes')
+    allData.data.(trialname).eyes = 1;
+end
 eyes = allData.data.(trialname).eyes;
 
 headpos = mean(allData.data.(trialname).Head_Yaw(x-500:x+250))*scaleAZ+offsetAZ;
 
 % eyesAZ = (allData.data.(trialname).eyesAZ_R+allData.data.(trialname).eyesAZ_L)/2;
 if eyes == 1
-if allData.data.(trialname).speaker(1) >= 0
-	eyesAZ = allData.data.(trialname).eyesAZ_R;
-else
-	eyesAZ = allData.data.(trialname).eyesAZ_L;
-end
+    if allData.data.(trialname).speaker(1) >= 0
+        eyesAZ = allData.data.(trialname).eyesAZ_R;
+    else
+        eyesAZ = allData.data.(trialname).eyesAZ_L;
+    end
 elseif eyes == 2
     eyesAZ = allData.data.(trialname).eyesAZ_R;
 else
@@ -160,9 +164,9 @@ if length(datafile) == 1
     load(datafilename) % variable scale is loaded
     disp('Found previously saved session')
     disp(['Loading file ' xmlfile])
-   % assignin('base', 'allData',allData)
+    % assignin('base', 'allData',allData)
     try
-    disp(length(allData.data.trial_1.eyesAZ))
+        disp(length(allData.data.trial_1.eyesAZ))
     catch
         for i=1:allData.num_trials
             allData.data.(['trial_', num2str(i)]).eyesAZ = (allData.data.(['trial_', num2str(i)]).eyesAZ_R+allData.data.(['trial_', num2str(i)]).eyesAZ_L)/2;
@@ -198,6 +202,7 @@ else
     
     totalNumTrials = length(out.GXML_Root.Excel_Cluster);
     Excelinfo = zeros(totalNumTrials, 7);
+    HeadphoneParams = zeros(totalNumTrials, 11);
     trialstartsample = 1;
     for trialNum = 1:totalNumTrials % number of trials
         
@@ -248,7 +253,24 @@ else
         
         trialstartsample = trialendsample+1;
         
-        data.(['trial_', num2str(trialNum)]).speaker = speaker;
+        if ~isempty(strfind(xmlfile , 'Headphone'))
+            HeadphoneParams(trialNum,:) = [...
+                1, ... %logical bit that tells the program to use headphones for plotting
+                str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Pre_Galv_Hor.Text),... % Angle Galvo starts at
+                str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Galv_Mov_Dly.Text),... % Delay period of galvo
+                str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Galv_Mov_Hor.Text),... % Angle galvo ends at
+                str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Galv_Mov_Per.Text),... % Duration of galvo move
+                str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Ph_Dly.Text),... % Delay for start of sound
+                str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Ph_Rmp_Dur.Text),... % Duration of sound
+                str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Ph_Bgn_ILD.Text),... % starting ILD
+                str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Ph_End_ILD.Text),... % ending ILD
+                str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Ph_Bgn_ITD.Text),... % starting ITD
+                str2double(out.GXML_Root.Excel_Cluster{1, trialNum}.Ph_End_ITD.Text)... % ending ITD
+                ];
+            data.(['trial_', num2str(trialNum)]).speaker = -eyesEL_L;
+        else
+            data.(['trial_', num2str(trialNum)]).speaker = speaker;
+        end
         
         data.(['trial_', num2str(trialNum)]).eyesAZ_R = eyesAZ_R;
         data.(['trial_', num2str(trialNum)]).eyesAZ_L = eyesAZ_L;
@@ -273,6 +295,8 @@ else
     iFour = ['trial_',num2str(find(Excelinfo(:,2) == 4, 1, 'last' ))];
     iFive = ['trial_',num2str(find(Excelinfo(:,2) == 5, 1, 'last' ))];
     
+    
+    
     if isempty(strfind(xmlfile , 'Free'))
         data.scaleAZ = 0;
         data.offsetAZ = 0;
@@ -295,6 +319,7 @@ else
     
     allData=get(mydata.MainFigure,'userdata');
     allData.Excelinfo = Excelinfo;
+    allData.HeadphoneParams = HeadphoneParams;
     allData.data=data;
     allData.Subject = xmlfile(1:6);
     allData.filename = xmlfile;
@@ -601,22 +626,54 @@ disp([ 'Export finished. Check Excel file ' filename ])
 
 end
 
-function [m]= MeasureTrial(mydata,trialname, scaleF, offsetF)
+function [m]= MeasureTrial(mydata,trialname, scaleF, offsetF, headphoneparams)
 allData=get(mydata.MainFigure,'userdata');
 scaleAZ = allData.data.scaleAZ;
 offsetAZ = allData.data.offsetAZ;
 %horizontal
 positions.eyesAZ=allData.data.(trialname).eyesAZ*scaleF+offsetF;
 positions.eyesEL=allData.data.(trialname).eyesEL_R;
-positions.speakerAZ=allData.data.(trialname).speaker;
+
 positions.headYAW=allData.data.(trialname).Head_Yaw*scaleAZ+offsetAZ;
+
+if headphoneparams(1)
+    % fake the speaker movement
+    % first figure out if it's a galvo trial
+    if headphoneparams(3) > 0
+        %its galvo
+        startang = headphoneparams(2);
+        endang = headphoneparams(4);
+        delay = headphoneparams(3);
+        duration = headphoneparams(5);
+    elseif (headphoneparams(8)-headphoneparams(9)) == 0
+        % not ILD so it's ITD
+        startang = headphoneparams(10)/9;
+        endang = headphoneparams(11)/9;
+        delay = headphoneparams(6);
+        duration = headphoneparams(7);
+    else
+        %it's ILD
+        startang = headphoneparams(8)*6;
+        endang = headphoneparams(9)*6;
+        delay = headphoneparams(6);
+        duration = headphoneparams(7);
+    end
+    fakespeaker = [startang*ones(delay-1,1); transpose(startang:(endang-startang)/duration:endang)];
+    % figure; plot(fakespeaker); error('stop here')
+    
+    positions.speakerAZ = fakespeaker;
+    
+else
+    positions.speakerAZ=allData.data.(trialname).speaker;
+end
 
 positions.gaze = positions.eyesAZ + positions.headYAW;
 positions.headYAW = positions.headYAW;
 
 velocities= calcva(positions,20);
+%figure; plot(velocities.speakerAZ); error('stop here')
 
-try % calculate the trail start and end positions
+%try % calculate the trail start and end positions
     m.start_position = round(mean(positions.speakerAZ(200:300)));
     m.end_position = round(mean(positions.speakerAZ(end-300:end)));
     %
@@ -664,7 +721,9 @@ try % calculate the trail start and end positions
     else
         endplot = endWin;
     end
-    
+if endplot > length(positions.eyesAZ)
+    endplot = length(positions.eyesAZ);
+end
     %horizontal
     positions.eyesAZ=positions.eyesAZ(startplot:endplot); %eye posiitons
     positions.eyesEL=positions.eyesEL(startplot:endplot);
@@ -802,11 +861,11 @@ try % calculate the trail start and end positions
     m.pursuitAmplitudes= round(positions.gaze(pursuitMovements_end)-positions.gaze(pursuitMovements_start));
     m.headpursuitAmplitude = round(positions.headYAW(pursuitMovements_end)-positions.headYAW(pursuitMovements_start));
     
-catch
-    disp('Problem extracting saccades and smooth pursuit')
-    m.positions=positions;
-    m.numGshifts = 0;
-end
+% catch
+%     disp('Problem extracting saccades and smooth pursuit')
+%     m.positions=positions;
+%     m.numGshifts = 0;
+% end
 
 end
 
@@ -827,7 +886,7 @@ offsetAZ = allData.data.offsetAZ;
 scaleF = allData.data.(trialname).scaleF;
 offsetF = allData.data.(trialname).offsetF;
 
-meas=MeasureTrial(mydata,trialname, scaleF, offsetF);
+meas=MeasureTrial(mydata,trialname, scaleF, offsetF, allData.HeadphoneParams(plotThis,:));
 assignin('base','meas',meas);
 allData=get(mydata.MainFigure,'userdata');
 
@@ -846,11 +905,11 @@ set(mydata.scaleFactdisp,'string',num2str(scaleF))
 set(mydata.eyes,'Value',eyes)
 
 if eyes == 1
-if allData.data.(trialname).speaker(1) >= 0
-	allData.data.(trialname).eyesAZ = allData.data.(trialname).eyesAZ_R;
-else
-	allData.data.(trialname).eyesAZ = allData.data.(trialname).eyesAZ_L;
-end
+    if allData.data.(trialname).speaker(1) >= 0
+        allData.data.(trialname).eyesAZ = allData.data.(trialname).eyesAZ_R;
+    else
+        allData.data.(trialname).eyesAZ = allData.data.(trialname).eyesAZ_L;
+    end
 elseif eyes == 2
     allData.data.(trialname).eyesAZ = allData.data.(trialname).eyesAZ_R;
 else
