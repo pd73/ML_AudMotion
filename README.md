@@ -1,10 +1,11 @@
 ML_AudMotion
 ============
-Project plan to integrate Movement Analysis into single program
+Project plan to integrate Movement Analysis into a few programs
 
 Specs:
 - Can read data formatted in 'both' formats
 - Initial criteria are to reproduce Basic and Head-free ramp analysis
+- Seperate programs for Ramps, Headphone Ramps, and Cycles
 
 ---
 *1. Program name is 'SLab_Movement'*
