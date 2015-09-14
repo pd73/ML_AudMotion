@@ -447,12 +447,69 @@ for i = 1: length(f)
     
     outputtraces(:,1) = meas.positions.speakerAZ;
     outputtraces(:,2) = meas.positions.eyesAZ;
-    
-    try % mark saccades in red
-        %  i = -1;
-        if meas.numGshifts > 0
-            for j = 1:meas.numGshifts
-                % add the saccades to column 3
+    outputtraces(:,5) = meas.positions.headYAW;
+
+try % mark saccades in red
+    j = -1;
+    desacpursuit = zeros(1,length(meas.pursuitMovements_ind));
+    desacIndex = 1;
+    if meas.numGshifts > 0
+        for j = 1:meas.numGshifts
+            
+            outputtraces(meas.Gshifts_start(j):meas.Gshifts_end(j),3) = meas.positions.eyesAZ(meas.Gshifts_start(j):meas.Gshifts_end(j));
+            outputtraces(meas.pursuitMovements_start(j):meas.pursuitMovements_end(j),4) = meas.positions.eyesAZ(meas.pursuitMovements_start(j):meas.pursuitMovements_end(j))-netSaccade;
+                       
+            xes =  meas.pursuitMovements_start(j):meas.pursuitMovements_end(j);
+            yes = positions.eyesAZ(meas.pursuitMovements_start(j):meas.pursuitMovements_end(j))-netSaccade;
+            yesGAZE = positions.gaze(meas.pursuitMovements_start(j):meas.pursuitMovements_end(j))-netSaccade;
+            
+            desacpursuit(desacIndex:desacIndex+length(xes)-1) = yesGAZE;
+            desacIndex = desacIndex+length(xes);
+            
+            if (length(xes) > 100 && (meas.pursuitMovements_start(i+1)+100) < length(positions.eyesAZ) )
+                % desaccade
+                % get smooth segments before and after the saccade
+                prevSmooth = positions.eyesAZ(meas.pursuitMovements_end(i)-100:meas.pursuitMovements_end(i));
+                nextSmooth = positions.eyesAZ(meas.pursuitMovements_start(i+1):(meas.pursuitMovements_start(i+1)+100));
+                
+                % calculate their slopes and take average
+                fit1 = polyfit(1:length(prevSmooth), prevSmooth',1);
+                fit2 = polyfit(1:length(nextSmooth), nextSmooth',1);
+                
+                % multiply that slope by duration of saccade to get AZ drift during saccade
+                drift = (meas.Gshifts_end(i)-meas.Gshifts_start(i))*(fit1(1)+fit2(1))/2;
+                
+            else
+                drift = 0;
+            end
+            netSaccade = netSaccade + positions.eyesAZ(meas.Gshifts_end(i))- positions.eyesAZ(meas.Gshifts_start(i)) - drift ;
+            if i == meas.numGshifts
+                
+                xes =  meas.pursuitMovements_start(end):meas.pursuitMovements_end(end);
+                yes = positions.eyesAZ(meas.pursuitMovements_start(end):meas.pursuitMovements_end(end))-netSaccade;
+                yesGAZE = positions.gaze(meas.pursuitMovements_start(end):meas.pursuitMovements_end(end))-netSaccade;
+                
+                plot(xes,yes,'linewidth',1,'color','w')
+                plot(xes,yesGAZE,'linewidth',2.5,'color','c')
+                
+                desacpursuit(desacIndex:desacIndex+length(xes)-1) = yesGAZE;
+                
+            end
+        end
+    else
+        
+        yes = positions.eyesAZ;
+        xes =  1:length(yes);
+        yesGAZE = positions.gaze;
+                
+        desacpursuit = yesGAZE;
+    end
+catch
+    disp('Error - Tried and failed to plot smooth pursuit')
+    disp(['It broke on iteration ' num2str(i) ' of ' num2str(meas.numGshifts)])
+end
+
+
                 outputtraces(meas.Gshifts_start(j):meas.Gshifts_end(j),3) = meas.positions.eyesAZ(meas.Gshifts_start(j):meas.Gshifts_end(j));
                 
                 outputtraces(meas.pursuitMovements_start(j):meas.pursuitMovements_end(j),4) = meas.positions.eyesAZ(meas.pursuitMovements_start(j):meas.pursuitMovements_end(j))-netSaccade;
