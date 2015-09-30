@@ -105,7 +105,6 @@ eyes = allData.data.(trialname).eyes;
 
 headpos = mean(allData.data.(trialname).Head_Yaw(x-500:x+250))*scaleAZ+offsetAZ;
 
-% eyesAZ = (allData.data.(trialname).eyesAZ_R+allData.data.(trialname).eyesAZ_L)/2;
 if eyes == 1
     if allData.data.(trialname).speaker(1) >= 0
         eyesAZ = allData.data.(trialname).eyesAZ_R;
@@ -160,7 +159,6 @@ if length(datafile) == 1
     load(datafilename) % variable scale is loaded
     disp('Found previously saved session')
     disp(['Loading file ' xmlfile])
-    % assignin('base', 'allData',allData)
     try
         disp(length(allData.data.trial_1.eyesAZ))
     catch
@@ -193,7 +191,6 @@ else
     
     [B,A] = butter(12,0.1,'low');
     
-    %inneroffset = -0.7109;% varName{find(strcmp('Inr_Offset',varName)),2}/100; Per Justin, the number is calculated on a daily basis and needs to be pulled from the spreadsheet.
     inneroffset = str2double(out.GXML_Root.Excel_Cluster{1, 1}.Inr_Offset.Text);
     
     totalNumTrials = length(out.GXML_Root.Excel_Cluster);
@@ -436,37 +433,30 @@ f=allData.trialList;
 tracefilename = [allData.filename(1:end-4),'_trace.mat'];
 
 for i = 1: length(f)
-    
+    %try % mark saccades in red
     trialnumber=f{i}{1};
     disp(['Analyzing trial ' num2str(i)])
     meas=MeasureTrial(mydata,trialnumber,allData.data.(trialnumber).scaleF,allData.data.(trialnumber).offsetF );
     
-    netSaccade = 0;
-    
     outputtraces = double.empty(length(meas.positions.speakerAZ),0);
-    
     outputtraces(:,1) = meas.positions.speakerAZ;
     outputtraces(:,2) = meas.positions.eyesAZ;
+    outputtraces(:,3) = NaN(1,length(meas.positions.eyesAZ));
+    outputtraces(:,4) = meas.positions.headYAW;
     
-    try % mark saccades in red
-        %  i = -1;
-        if meas.numGshifts > 0
-            for j = 1:meas.numGshifts
-                % add the saccades to column 3
-                outputtraces(meas.Gshifts_start(j):meas.Gshifts_end(j),3) = meas.positions.eyesAZ(meas.Gshifts_start(j):meas.Gshifts_end(j));
-                
-                outputtraces(meas.pursuitMovements_start(j):meas.pursuitMovements_end(j),4) = meas.positions.eyesAZ(meas.pursuitMovements_start(j):meas.pursuitMovements_end(j))-netSaccade;
-                
-                if meas.pursuitMovements_end(j)-100 < 1
-                    prevSmooth = meas.positions.eyesAZ(1:meas.pursuitMovements_end(j));
-                else
-                    prevSmooth = meas.positions.eyesAZ(meas.pursuitMovements_end(j)-100:meas.pursuitMovements_end(j));
-                end
-                if meas.pursuitMovements_start(j+1)+100 > length(meas.positions.eyesAZ)
-                    nextSmooth = meas.positions.eyesAZ(meas.pursuitMovements_start(j+1):end);
-                else
-                    nextSmooth = meas.positions.eyesAZ(meas.pursuitMovements_start(j+1):(meas.pursuitMovements_start(j+1)+100));
-                end
+    netSaccade = 0;
+    desacIndex = 1;
+    if meas.numGshifts > 0
+        for j = 1:meas.numGshifts
+            xes =  meas.pursuitMovements_start(j):meas.pursuitMovements_end(j);
+            outputtraces(xes,3) = meas.positions.eyesAZ(xes)-netSaccade;
+            desacIndex = desacIndex+length(xes);
+            
+            if (length(xes) > 100 && (meas.pursuitMovements_start(j+1)+100) < length(meas.positions.eyesAZ) )
+                % desaccade
+                % get smooth segments before and after the saccade
+                prevSmooth = meas.positions.eyesAZ(meas.pursuitMovements_end(j)-100:meas.pursuitMovements_end(j));
+                nextSmooth = meas.positions.eyesAZ(meas.pursuitMovements_start(j+1):(meas.pursuitMovements_start(j+1)+100));
                 
                 % calculate their slopes and take average
                 fit1 = polyfit(1:length(prevSmooth), prevSmooth',1);
@@ -474,43 +464,24 @@ for i = 1: length(f)
                 
                 % multiply that slope by duration of saccade to get AZ drift during saccade
                 drift = (meas.Gshifts_end(j)-meas.Gshifts_start(j))*(fit1(1)+fit2(1))/2;
-                netSaccade = netSaccade + meas.positions.eyesAZ(meas.Gshifts_end(j))- meas.positions.eyesAZ(meas.Gshifts_start(j)) - drift ;
                 
-                x1 = meas.Gshifts_start(j);
-                x2 = meas.Gshifts_end(j);
-                y1 = outputtraces(meas.pursuitMovements_end(j),4);
-                y2 = y1 + drift;
-                outputtraces(x1:x2,4) = linspace(y1,y2,x2-x1+1)';
-                
-                if j == meas.numGshifts
-                    outputtraces(meas.pursuitMovements_start(end):meas.pursuitMovements_end(end),4) = meas.positions.eyesAZ(meas.pursuitMovements_start(end):meas.pursuitMovements_end(end))-netSaccade;
-                end
+            else
+                drift = 0;
             end
-        else
-            outputtraces(:,3) = 0;
-            outputtraces(:,4) = positions.eyesAZ;
+            netSaccade = netSaccade + meas.positions.eyesAZ(meas.Gshifts_end(j))- meas.positions.eyesAZ(meas.Gshifts_start(j)) - drift ;
+            if j == meas.numGshifts
+                xes =  meas.pursuitMovements_start(end):meas.pursuitMovements_end(end);
+                outputtraces(xes,3) = meas.positions.eyesAZ(xes)-netSaccade;           
+            end
         end
-        
-    catch
-        disp(i)
-        disp(meas.numGshifts)
-        assignin('base','outputtraces',outputtraces)
-        assignin('base','meas', meas)
-        disp('error Tried and failed to plot smooth pursuit')
+    else
+        outputtraces(:,3) = meas.positions.eyesAZ;
     end
     cyclestraces.(trialnumber) = outputtraces;
-    
 end
-
-%         assignin('base','cyclestraces',cyclestraces)
-%         assignin('base','meas', meas)
-
-
-
 save(tracefilename, 'cyclestraces')
 disp([ 'Export finished. Check Mat file ' tracefilename ])
-
-
+assignin('base','cyclestraces',cyclestraces)
 end
 
 
@@ -519,7 +490,6 @@ function Export(~,~,mydata)
 %restriction on valid segments
 durationofvalidsegments = 250;
 
-%cd(directoryname)
 allData=get(mydata.MainFigure,'userdata');
 
 if allData.cycles == 1
@@ -536,8 +506,6 @@ f=allData.trialList;
 filename = [directoryname, allData.filename(1:end-4),'_Slopes.xls'];
 
 % Export to Excel
-%xlswrite(filename, { 'Subject'	'LVTrial#'  'XLTrial'	'Start angle'	'End angle' 	'Velocity'	'Peak Gaze Pursuit'	'Mean Gaze Pursuit'	'Weighted Gaze Pursuit'	'# Pursuit segments'	'Fraction valid pursuit'  'Fraction all pursuit' 'Head Start' 'Gaze Start' 'Scale Factor' 'Offset'}, 'Sheet1', 'A1')
-
 xlswrite(filename, { 'Subject'	'LVTrial#'  'XLTrial'	'Start angle'	'End angle' 	'Velocity'...
     'Central Slope' 'Central Slope Head YAW' 'Peak Gaze Pursuit'	'Time to Peak' 'Mean Gaze Pursuit'  '# Pursuit segments' 'Fraction all pursuit' ...
     '# Valid pursuit segments'	'Fraction valid pursuit'   'Head Start' 'Gaze Start'}, 'Sheet1', 'A1')
@@ -612,8 +580,6 @@ for i = 1:length(f)
             outputPursuitsegments{(j-1)*3+5} = endList(j);
             outputPursuitsegments{(j-1)*3+6} = pursuitVelocitiesList(j);
         end
-        
-        %disp(outputPursuitsegments)
         rowLen = length(outputPursuitsegments);
         if rowLen > 26
             xlcell = ['A', num2str(i+1),':A',char(64+rowLen-26),num2str(i+1)];
@@ -696,7 +662,6 @@ for i = 1:length(f)
     
 end
 xlswrite(filename, { 'Export Complete'},  'Sheet1', ['A', num2str(i+2), ':A', num2str(i+2)])
-%save(scalefilename, 'scale')
 disp([ 'Export finished. Check Excel file ' filename ])
 
 end
@@ -782,9 +747,7 @@ try % calculate the trail start and end positions
     start_gaze =find(gazetrail > 0.2*max(gazetrail),1);
     
     smoothvels = calcva(positions,500);
-    
-    %figure;plot(accelerations.gaze);figure;
-    %  eyesAZvelon = 15; % saccades if faster then 50
+
     thisThresh = allData.data.(trialname).saccThresh/100;
     if thisThresh == 0
         thisThresh =  3*std(abs(velocities.gaze-smoothvels.gaze))/max(abs(velocities.gaze-smoothvels.gaze));
@@ -797,8 +760,7 @@ try % calculate the trail start and end positions
     eyesAZvelon = thisThresh*max(abs(velocities.gaze-smoothvels.gaze));
     
     Gshifts_ind = find(abs(velocities.gaze-smoothvels.gaze) > eyesAZvelon);
-    % Gshifts_ind= union(find(abs(velocities.gaze) > eyesAZvelon);%,...
-    skirtwidth = 20; % The saccades are surrounded by 20ms of excluded trace
+       skirtwidth = 20; % The saccades are surrounded by 20ms of excluded trace
     Gshifts_withSkirt = [];
     for index = Gshifts_ind
         Gshifts_withSkirt = [ Gshifts_withSkirt, [index - skirtwidth: index + skirtwidth]];
@@ -813,7 +775,6 @@ try % calculate the trail start and end positions
     pursuitMovements_ind = setxor(1:length(positions.eyesAZ),Gshifts_ind);
     
     %eliminate movements before 100ms
-    % pursuitMovements_ind=pursuitMovements_ind(pursuitMovements_ind>100);
     
     Gshifts=find(diff(Gshifts_ind)>20);
     numGshifts=length(Gshifts)+1;
@@ -880,7 +841,6 @@ try % calculate the trail start and end positions
     m.positions=positions;
     m.velocities=velocities;
     m.smoothvels=smoothvels;
-    % m.accelerations=accelerations;
     
     m.TargetStart = start_time-startplot; % ie always at 500ms
     m.HeadStart = start_head; % 500 is the buffer for plotting before the start of the motion
@@ -996,18 +956,18 @@ if (meas.start_position - meas.end_position) == 0
     hold on
     return
 end
-
-% Plot of velocities
-subplot(4,1,2)
-hold off
-plot(meas.velocities.speakerAZ,'m')
-title('Velocity Plot: Arm motion(M), Eyes(B), Gaze(G) and Head Yaw(Y)')
-hold on
-plot(meas.velocities.eyesAZ,'b')
-plot(meas.velocities.gaze,'g')
-plot(meas.velocities.headYAW,'y')
-
 if allData.cycles == 0
+    % Plot of velocities
+    subplot(4,1,2)
+    hold off
+    plot(meas.velocities.speakerAZ,'m')
+    title('Velocity Plot: Arm motion(M), Eyes(B), Gaze(G) and Head Yaw(Y)')
+    hold on
+    plot(meas.velocities.eyesAZ,'b')
+    plot(meas.velocities.gaze,'g')
+    plot(meas.velocities.headYAW,'y')
+    
+    
     % Plot of saccade candidates
     subplot(4,1,3)
     hold off
@@ -1021,8 +981,20 @@ if allData.cycles == 0
     plot(sacctrace,'r')
     
     % Main movement plot with the smooth pursuit and the saccades
+    
     subplot(4,1,4)
 else
+    subplot(4,1,2)
+    hold off
+    thisThresh = allData.data.(trialname).saccThresh*max(abs(meas.velocities.gaze-meas.smoothvels.gaze))/100;
+    plot([0, length(meas.velocities.gaze)],[thisThresh,thisThresh],'m-')
+    title('Candidate Saccades and threshold')
+    hold on
+    sacctrace = abs(meas.velocities.gaze-meas.smoothvels.gaze);
+    plot(sacctrace,'w')
+    sacctrace(sacctrace < thisThresh) = 0;
+    plot(sacctrace,'r')
+    
     subplot(2,1,2)
 end
 
@@ -1137,10 +1109,10 @@ try % mark saccades in red
         
         ipursuitStart = find(meas.pursuitMovements_ind > ispk25,1);
         ipursuitEnd = find(meas.pursuitMovements_ind > ispk75,1);
-        xes = meas.pursuitMovements_ind(ipursuitStart:ipursuitEnd);%ispk25:ispk75%[ipursuitStart:ipursuitEnd]+spkStart;
+        xes = meas.pursuitMovements_ind(ipursuitStart:ipursuitEnd);
         yes = desacpursuit(ipursuitStart:ipursuitEnd);
         
-        plot(xes,yes, 'go')%; hold on; plot(meas.pursuitMovements_ind,desacpursuit, 'y-'); plot(meas.positions.speakerAZ,'r-')
+        plot(xes,yes, 'go')
         fitpar = polyfit(xes, yes, 1);
         text(xes(1),yes(1)-10,{['Central Slope = ' num2str(fitpar(1)*1000, '%0.1f') ' deg/s'];['Head C. Slope = ' num2str(fitparh(1)*1000, '%0.1f') ' deg/s']})
         
