@@ -442,15 +442,20 @@ for i = 1: length(f)
     outputtraces(:,1) = meas.positions.speakerAZ;
     outputtraces(:,2) = meas.positions.eyesAZ;
     outputtraces(:,3) = NaN(1,length(meas.positions.eyesAZ));
-    outputtraces(:,4) = meas.positions.headYAW;
+    outputtraces(:,4) = outputtraces(:,3);
+    outputtraces(:,5) = meas.positions.headYAW;
     
     netSaccade = 0;
-    desacIndex = 1;
+    % desacIndex = 1;
     if meas.numGshifts > 0
         for j = 1:meas.numGshifts
+            
             xes =  meas.pursuitMovements_start(j):meas.pursuitMovements_end(j);
             outputtraces(xes,3) = meas.positions.eyesAZ(xes)-netSaccade;
-            desacIndex = desacIndex+length(xes);
+            outputtraces(xes,4) = outputtraces(xes,3);
+            
+            sacdur = meas.pursuitMovements_start(j+1)-meas.pursuitMovements_end(j);
+            lastpursuitpoint = outputtraces(xes(end),4);
             
             if (length(xes) > 100 && (meas.pursuitMovements_start(j+1)+100) < length(meas.positions.eyesAZ) )
                 % desaccade
@@ -463,19 +468,27 @@ for i = 1: length(f)
                 fit2 = polyfit(1:length(nextSmooth), nextSmooth',1);
                 
                 % multiply that slope by duration of saccade to get AZ drift during saccade
-                drift = (meas.Gshifts_end(j)-meas.Gshifts_start(j))*(fit1(1)+fit2(1))/2;
-                
+                drift = sacdur*(fit1(1)+fit2(1))/2;
+                driftsegment = (0:1/sacdur:1)*drift + lastpursuitpoint;
             else
                 drift = 0;
+                driftsegment = lastpursuitpoint * ones(1, sacdur+1);
             end
             netSaccade = netSaccade + meas.positions.eyesAZ(meas.Gshifts_end(j))- meas.positions.eyesAZ(meas.Gshifts_start(j)) - drift ;
+            
+            outputtraces(meas.pursuitMovements_end(j):meas.pursuitMovements_start(j+1),4) = driftsegment';
+            
             if j == meas.numGshifts
                 xes =  meas.pursuitMovements_start(end):meas.pursuitMovements_end(end);
-                outputtraces(xes,3) = meas.positions.eyesAZ(xes)-netSaccade;           
+                outputtraces(xes,3) = meas.positions.eyesAZ(xes)-netSaccade;
+                outputtraces(xes,4) = outputtraces(xes,3);
             end
+            
         end
+        
     else
         outputtraces(:,3) = meas.positions.eyesAZ;
+        outputtraces(:,4) = outputtraces(:,3);
     end
     cyclestraces.(trialnumber) = outputtraces;
 end
@@ -747,7 +760,7 @@ try % calculate the trail start and end positions
     start_gaze =find(gazetrail > 0.2*max(gazetrail),1);
     
     smoothvels = calcva(positions,500);
-
+    
     thisThresh = allData.data.(trialname).saccThresh/100;
     if thisThresh == 0
         thisThresh =  3*std(abs(velocities.gaze-smoothvels.gaze))/max(abs(velocities.gaze-smoothvels.gaze));
@@ -760,7 +773,7 @@ try % calculate the trail start and end positions
     eyesAZvelon = thisThresh*max(abs(velocities.gaze-smoothvels.gaze));
     
     Gshifts_ind = find(abs(velocities.gaze-smoothvels.gaze) > eyesAZvelon);
-       skirtwidth = 20; % The saccades are surrounded by 20ms of excluded trace
+    skirtwidth = 20; % The saccades are surrounded by 20ms of excluded trace
     Gshifts_withSkirt = [];
     for index = Gshifts_ind
         Gshifts_withSkirt = [ Gshifts_withSkirt, [index - skirtwidth: index + skirtwidth]];
